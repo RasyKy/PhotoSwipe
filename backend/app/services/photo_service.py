@@ -1,0 +1,219 @@
+import logging
+from datetime import date as date_type
+
+from supabase import Client
+
+from app.db.redis_client import get_redis
+from app.db.supabase_client import get_supabase
+
+logger = logging.getLogger(__name__)
+
+
+def record_swipe(
+    session_id: str,
+    photo_uri: str,
+    photo_name: str,
+    file_size_bytes: int,
+    action: str,
+) -> dict:
+    logger.info("record_swipe called session_id=%s photo_name=%s action=%s", session_id, photo_name, action)
+    supabase = get_supabase()
+
+    session = _get_session(supabase, session_id)
+
+    swipe_result = supabase.table("swipe_actions").insert({
+        "session_id": session_id,
+        "photo_uri": photo_uri,
+        "photo_name": photo_name,
+        "file_size_bytes": file_size_bytes,
+        "action": action,
+    }).execute()
+    swipe = swipe_result.data[0]
+
+    if action == "delete":
+        supabase.table("delete_queue").insert({
+            "session_id": session_id,
+            "photo_uri": photo_uri,
+            "photo_name": photo_name,
+            "file_size_bytes": file_size_bytes,
+        }).execute()
+
+    counter_update = {"total_reviewed": session["total_reviewed"] + 1}
+    if action == "keep":
+        counter_update["total_kept"] = session["total_kept"] + 1
+    else:
+        counter_update["total_deleted"] = session["total_deleted"] + 1
+        counter_update["storage_saved_bytes"] = session["storage_saved_bytes"] + file_size_bytes
+    supabase.table("sessions").update(counter_update).eq("id", session_id).execute()
+
+    _update_daily_stats(supabase, session["user_id"], action, file_size_bytes, delta=1)
+
+    _invalidate_summary_cache(session["user_id"])
+    logger.info("record_swipe completed swipe_id=%s session_id=%s action=%s", swipe["id"], session_id, action)
+    return swipe
+
+
+def undo_swipe(session_id: str) -> dict:
+    logger.info("undo_swipe called session_id=%s", session_id)
+    supabase = get_supabase()
+
+    swipe_result = (
+        supabase.table("swipe_actions")
+        .select("*")
+        .eq("session_id", session_id)
+        .eq("undone", False)
+        .order("swiped_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not swipe_result.data:
+        logger.warning("undo_swipe rejected: no swipe to undo session_id=%s", session_id)
+        raise ValueError("No swipe to undo")
+    swipe = swipe_result.data[0]
+
+    supabase.table("swipe_actions").update({"undone": True}).eq("id", swipe["id"]).execute()
+
+    if swipe["action"] == "delete":
+        supabase.table("delete_queue").delete().eq("session_id", session_id).eq("photo_uri", swipe["photo_uri"]).execute()
+
+    session = _get_session(supabase, session_id)
+    counter_update = {"total_reviewed": session["total_reviewed"] - 1}
+    if swipe["action"] == "keep":
+        counter_update["total_kept"] = session["total_kept"] - 1
+    else:
+        counter_update["total_deleted"] = session["total_deleted"] - 1
+        counter_update["storage_saved_bytes"] = session["storage_saved_bytes"] - swipe["file_size_bytes"]
+    supabase.table("sessions").update(counter_update).eq("id", session_id).execute()
+
+    _update_daily_stats(supabase, session["user_id"], swipe["action"], swipe["file_size_bytes"], delta=-1)
+
+    _invalidate_summary_cache(session["user_id"])
+    logger.info("undo_swipe completed swipe_id=%s session_id=%s action=%s", swipe["id"], session_id, swipe["action"])
+    return {
+        "undone_swipe_id": swipe["id"],
+        "photo_uri": swipe["photo_uri"],
+        "action": swipe["action"],
+    }
+
+
+def get_delete_queue(session_id: str) -> list[dict]:
+    logger.info("get_delete_queue called session_id=%s", session_id)
+    supabase = get_supabase()
+    result = (
+        supabase.table("delete_queue")
+        .select("*")
+        .eq("session_id", session_id)
+        .eq("confirmed", False)
+        .execute()
+    )
+    logger.info("get_delete_queue returning %d items session_id=%s", len(result.data), session_id)
+    return result.data
+
+
+def remove_delete_queue_item(item_id: str) -> dict:
+    logger.info("remove_delete_queue_item called item_id=%s", item_id)
+    supabase = get_supabase()
+
+    item_result = supabase.table("delete_queue").select("*").eq("id", item_id).execute()
+    if not item_result.data:
+        logger.warning("remove_delete_queue_item not found item_id=%s", item_id)
+        raise LookupError("Delete queue item not found")
+    item = item_result.data[0]
+
+    supabase.table("delete_queue").delete().eq("id", item_id).execute()
+
+    session = _get_session(supabase, item["session_id"])
+    supabase.table("sessions").update({
+        "total_deleted": session["total_deleted"] - 1,
+        "storage_saved_bytes": session["storage_saved_bytes"] - item["file_size_bytes"],
+        "total_kept": session["total_kept"] + 1,
+    }).eq("id", item["session_id"]).execute()
+
+    _update_daily_stats(supabase, session["user_id"], "delete", item["file_size_bytes"], delta=-1)
+    _update_daily_stats(supabase, session["user_id"], "keep", 0, delta=1)
+
+    _invalidate_summary_cache(session["user_id"])
+    logger.info("remove_delete_queue_item completed item_id=%s session_id=%s", item_id, item["session_id"])
+    return {"removed": True}
+
+
+def confirm_delete(session_id: str) -> dict:
+    logger.info("confirm_delete called session_id=%s", session_id)
+    supabase = get_supabase()
+
+    items_result = (
+        supabase.table("delete_queue")
+        .select("id, file_size_bytes")
+        .eq("session_id", session_id)
+        .eq("confirmed", False)
+        .execute()
+    )
+    if not items_result.data:
+        logger.warning("confirm_delete rejected: empty queue session_id=%s", session_id)
+        raise ValueError("No items in delete queue to confirm")
+
+    session = _get_session(supabase, session_id)
+
+    supabase.table("delete_queue").update({"confirmed": True}).eq("session_id", session_id).eq("confirmed", False).execute()
+
+    count = len(items_result.data)
+    freed = sum(i["file_size_bytes"] for i in items_result.data)
+    _invalidate_summary_cache(session["user_id"])
+    logger.info("confirm_delete completed session_id=%s count=%d freed_bytes=%d", session_id, count, freed)
+    return {"deleted_count": count, "storage_freed_bytes": freed}
+
+
+def _invalidate_summary_cache(user_id: str) -> None:
+    redis = get_redis()
+    if redis is None:
+        return
+    try:
+        redis.delete(f"analytics:summary:{user_id}")
+        logger.debug("summary cache invalidated user_id=%s", user_id)
+    except Exception:
+        logger.warning("summary cache invalidation failed user_id=%s", user_id)
+
+
+def _get_session(supabase: Client, session_id: str) -> dict:
+    logger.debug("_get_session session_id=%s", session_id)
+    result = (
+        supabase.table("sessions")
+        .select("user_id, total_reviewed, total_kept, total_deleted, storage_saved_bytes")
+        .eq("id", session_id)
+        .execute()
+    )
+    if not result.data:
+        logger.warning("_get_session not found session_id=%s", session_id)
+        raise LookupError("Session not found")
+    return result.data[0]
+
+
+def _update_daily_stats(supabase: Client, user_id: str, action: str, file_size_bytes: int, delta: int) -> None:
+    today = date_type.today().isoformat()
+    logger.debug("_update_daily_stats user_id=%s action=%s delta=%d date=%s", user_id, action, delta, today)
+    existing = (
+        supabase.table("daily_stats")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("date", today)
+        .execute()
+    )
+
+    if existing.data:
+        row = existing.data[0]
+        update = {"reviewed": row["reviewed"] + delta}
+        if action == "keep":
+            update["kept"] = row["kept"] + delta
+        else:
+            update["deleted"] = row["deleted"] + delta
+            update["storage_saved_bytes"] = row["storage_saved_bytes"] + (delta * file_size_bytes)
+        supabase.table("daily_stats").update(update).eq("user_id", user_id).eq("date", today).execute()
+    elif delta > 0:
+        supabase.table("daily_stats").insert({
+            "user_id": user_id,
+            "date": today,
+            "reviewed": 1,
+            "kept": 1 if action == "keep" else 0,
+            "deleted": 1 if action == "delete" else 0,
+            "storage_saved_bytes": file_size_bytes if action == "delete" else 0,
+        }).execute()
