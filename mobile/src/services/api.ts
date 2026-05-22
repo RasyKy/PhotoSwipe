@@ -1,10 +1,11 @@
-const BASE_URL = 'http://localhost:8000'; // Default to local backend
-const USE_MOCK = true;
+const BASE_URL = 'https://photoswipe.onrender.com/api/v1';
+const API_KEY = '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s';
+const USE_MOCK = false;
 
 interface ApiResponse<T> {
   success: boolean;
-  data?: T;
-  error?: string;
+  data?: T | null;
+  error?: string | null;
 }
 
 const handleResponse = async <T>(response: Response): Promise<ApiResponse<T>> => {
@@ -23,12 +24,12 @@ const realApi = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 
@@ -38,12 +39,12 @@ const realApi = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 
@@ -57,13 +58,13 @@ const realApi = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
         body: JSON.stringify({ photoId, action, timestamp: Date.now() }),
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 
@@ -76,13 +77,13 @@ const realApi = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
         body: JSON.stringify({ photoId }),
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 
@@ -91,12 +92,12 @@ const realApi = {
       const response = await fetch(`${BASE_URL}/photos/delete-queue`, {
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 
@@ -108,12 +109,12 @@ const realApi = {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 
@@ -125,13 +126,13 @@ const realApi = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+          'X-API-Key': API_KEY
         },
         body: JSON.stringify({ photoIds }),
       });
       return handleResponse(response);
     } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Network error' };
+      return { success: false, data: null, error: 'Network error' };
     }
   },
 };
