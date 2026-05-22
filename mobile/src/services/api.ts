@@ -21,7 +21,10 @@ const realApi = {
     try {
       const response = await fetch(`${BASE_URL}/sessions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
       });
       return handleResponse(response);
     } catch (error) {
@@ -33,6 +36,10 @@ const realApi = {
     try {
       const response = await fetch(`${BASE_URL}/sessions/${sessionId}/end`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
       });
       return handleResponse(response);
     } catch (error) {
@@ -48,7 +55,10 @@ const realApi = {
     try {
       const response = await fetch(`${BASE_URL}/sessions/${sessionId}/actions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
         body: JSON.stringify({ photoId, action, timestamp: Date.now() }),
       });
       return handleResponse(response);
@@ -64,7 +74,10 @@ const realApi = {
     try {
       const response = await fetch(`${BASE_URL}/sessions/${sessionId}/actions/undo`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
         body: JSON.stringify({ photoId }),
       });
       return handleResponse(response);
@@ -75,7 +88,12 @@ const realApi = {
 
   getDeleteQueue: async (): Promise<ApiResponse<{ queue: { photoId: string; uri: string }[] }>> => {
     try {
-      const response = await fetch(`${BASE_URL}/photos/delete-queue`);
+      const response = await fetch(`${BASE_URL}/photos/delete-queue`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
+      });
       return handleResponse(response);
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Network error' };
@@ -88,6 +106,10 @@ const realApi = {
     try {
       const response = await fetch(`${BASE_URL}/photos/delete-queue/${photoId}`, {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
       });
       return handleResponse(response);
     } catch (error) {
@@ -101,7 +123,10 @@ const realApi = {
     try {
       const response = await fetch(`${BASE_URL}/photos/confirm-delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': '_uvqlhLh5vMZzPqYOUhiI4YzImYbELKo_L22gNlAk5s'
+        },
         body: JSON.stringify({ photoIds }),
       });
       return handleResponse(response);
