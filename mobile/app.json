@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "PhotoSwipe",
+    "slug": "photoswipe",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.photoswipe"
+    },
+    "android": {
+      "package": "com.anonymous.photoswipe"
+    },
+    "web": {
+    },
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow PhotoSwipe to access your photos to help you clean up your library.",
+          "savePhotosPermission": "Allow PhotoSwipe to save photos to your library."
+        }
+      ]
+    ]
+  }
+}
