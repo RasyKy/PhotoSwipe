@@ -4,5 +4,6 @@ supabase
 python-dotenv
 python-multipart
 upstash-redis
+slowapi
 pytest
 httpx

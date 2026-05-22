@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 from app.models.schemas import (
     ConfirmDeleteRequest,
@@ -17,12 +17,14 @@ from app.services.photo_service import (
     undo_swipe,
 )
 from app.utils.helpers import error_response, success_response
+from app.utils.limiter import limiter
 
 router = APIRouter()
 
 
 @router.post("/swipe")
-def swipe(req: SwipeRequest):
+@limiter.limit("60/minute")
+def swipe(request: Request, req: SwipeRequest):
     try:
         result = record_swipe(
             req.session_id, req.photo_uri, req.photo_name, req.file_size_bytes, req.action
@@ -30,12 +32,15 @@ def swipe(req: SwipeRequest):
         return success_response(SwipeActionResponse(**result).model_dump())
     except LookupError as e:
         return error_response(str(e), 404)
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)
 
 
 @router.post("/undo")
-def undo(req: UndoSwipeRequest):
+@limiter.limit("30/minute")
+def undo(request: Request, req: UndoSwipeRequest):
     try:
         result = undo_swipe(req.session_id)
         return success_response(UndoResponse(**result).model_dump())
@@ -43,6 +48,8 @@ def undo(req: UndoSwipeRequest):
         return error_response(str(e), 400)
     except LookupError as e:
         return error_response(str(e), 404)
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -52,6 +59,8 @@ def queue(session_id: str):
     try:
         items = get_delete_queue(session_id)
         return success_response([DeleteQueueItemResponse(**i).model_dump() for i in items])
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -63,6 +72,8 @@ def remove_item(item_id: str):
         return success_response(result)
     except LookupError as e:
         return error_response(str(e), 404)
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -74,5 +85,7 @@ def confirm(req: ConfirmDeleteRequest):
         return success_response(ConfirmDeleteResponse(**result).model_dump())
     except ValueError as e:
         return error_response(str(e), 400)
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)

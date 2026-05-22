@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import CreateSessionRequest, SessionResponse, UpdateSessionRequest
 from app.services.session_service import create_session, get_sessions, update_session
@@ -14,6 +14,8 @@ def create(req: CreateSessionRequest):
         return success_response(SessionResponse(**session).model_dump())
     except ValueError as e:
         return error_response(str(e), 400)
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -23,6 +25,8 @@ def list_sessions(user_id: str):
     try:
         sessions = get_sessions(user_id)
         return success_response([SessionResponse(**s).model_dump() for s in sessions])
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)
 
@@ -34,5 +38,7 @@ def update(session_id: str, req: UpdateSessionRequest):
         return success_response(SessionResponse(**session).model_dump())
     except LookupError as e:
         return error_response(str(e), 404)
+    except HTTPException:
+        raise
     except Exception as e:
         return error_response(str(e), 500)

@@ -6,7 +6,10 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client():
     from app.main import app
-    return TestClient(app)
+    from app.utils.auth import verify_api_key
+    app.dependency_overrides[verify_api_key] = lambda: None
+    yield TestClient(app)
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -20,4 +23,9 @@ def mock_sb(monkeypatch):
         "app.services.backup_service",
     ]:
         monkeypatch.setattr(f"{module}.get_supabase", lambda sb=sb: sb)
+    for module in [
+        "app.services.analytics_service",
+        "app.services.photo_service",
+    ]:
+        monkeypatch.setattr(f"{module}.get_redis", lambda: None)
     return sb

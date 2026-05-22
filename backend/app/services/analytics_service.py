@@ -2,6 +2,8 @@ import json
 import logging
 from datetime import date, timedelta
 
+from fastapi import HTTPException
+
 from app.db.redis_client import get_redis
 from app.db.supabase_client import get_supabase
 
@@ -24,13 +26,18 @@ def get_summary(user_id: str) -> dict:
         except Exception:
             logger.warning("get_summary cache read failed user_id=%s, falling back to DB", user_id)
 
-    supabase = get_supabase()
-    result = (
-        supabase.table("sessions")
-        .select("total_reviewed, total_kept, total_deleted, storage_saved_bytes")
-        .eq("user_id", user_id)
-        .execute()
-    )
+    try:
+        supabase = get_supabase()
+        result = (
+            supabase.table("sessions")
+            .select("total_reviewed, total_kept, total_deleted, storage_saved_bytes")
+            .eq("user_id", user_id)
+            .execute()
+        )
+    except Exception as exc:
+        logger.error("Database error in get_summary: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable, please try again later.")
+
     sessions = result.data
     summary = {
         "total_reviewed": sum(s["total_reviewed"] for s in sessions),
@@ -56,16 +63,21 @@ def get_summary(user_id: str) -> dict:
 
 def get_history(user_id: str, period: str) -> list[dict]:
     logger.info("get_history called user_id=%s period=%s", user_id, period)
-    supabase = get_supabase()
-    query = supabase.table("daily_stats").select("*").eq("user_id", user_id)
+    try:
+        supabase = get_supabase()
+        query = supabase.table("daily_stats").select("*").eq("user_id", user_id)
 
-    if period == "week":
-        start = (date.today() - timedelta(days=6)).isoformat()
-        query = query.gte("date", start)
-    elif period == "month":
-        start = (date.today() - timedelta(days=29)).isoformat()
-        query = query.gte("date", start)
+        if period == "week":
+            start = (date.today() - timedelta(days=6)).isoformat()
+            query = query.gte("date", start)
+        elif period == "month":
+            start = (date.today() - timedelta(days=29)).isoformat()
+            query = query.gte("date", start)
 
-    result = query.order("date").execute()
+        result = query.order("date").execute()
+    except Exception as exc:
+        logger.error("Database error in get_history: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable, please try again later.")
+
     logger.info("get_history returning %d rows user_id=%s period=%s", len(result.data), user_id, period)
     return result.data
