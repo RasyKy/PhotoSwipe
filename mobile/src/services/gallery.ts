@@ -17,9 +17,11 @@ function assetToPhoto(asset: MediaLibrary.Asset): Photo {
   return {
     id: asset.id,
     uri: asset.uri,
+    filename: asset.filename,
     width: asset.width,
     height: asset.height,
     creationTime: asset.creationTime,
+    fileSize: (asset as any).fileSize ?? 0,
   };
 }
 

@@ -1,6 +1,6 @@
-import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import api from './api';
+import { sessionService } from './sessionService';
 import { DeleteQueueItem } from '../types/index';
 
 export interface DeleteProgress {
@@ -31,7 +31,8 @@ class DeleteService {
         onProgress({ completed: 0, total: photoIds.length });
       }
       
-      const apiResponse = await api.confirmDelete(photoIds);
+      const sessionId = sessionService.getSessionId() ?? '';
+      const apiResponse = await api.confirmDelete(sessionId);
       if (!apiResponse.success) {
         console.warn('API confirmDelete returned false');
       }

@@ -19,6 +19,9 @@ interface SwipeStore {
   removeFromDeleteQueue: (photoId: string) => void;
   clearDeleteQueue: () => void;
   setSessionId: (sessionId: string) => void;
+  setSwipedPhotos: (photoIds: Set<string>) => void;
+  setDeleteQueue: (items: DeleteQueueItem[]) => void;
+  addPhotos: (newPhotos: Photo[]) => void;
   reset: () => void;
 }
 
@@ -80,7 +83,7 @@ export const useSwipeStore = create<SwipeStore>((set, get) => ({
         const queueItem: DeleteQueueItem = {
           photoId: currentPhoto.id,
           uri: currentPhoto.uri,
-          size: 0, // Size would be fetched from file system if needed
+          size: currentPhoto.fileSize,
         };
         newDeleteQueue = [...state.deleteQueue, queueItem];
       }

@@ -1,10 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import api from './api';
+import { useSwipeStore } from '../store/swipeStore';
 import { SwipeAction } from '../types/index';
 
 const SESSION_STORAGE_KEY = 'photoswipe_session';
 const SESSION_ACTIONS_KEY = 'photoswipe_session_actions';
+const USER_ID_STORAGE_KEY = 'photoswipe_user_id';
+const DEVICE_ID_STORAGE_KEY = 'photoswipe_device_id';
 
 interface SessionState {
   sessionId: string;
@@ -12,46 +15,66 @@ interface SessionState {
   actions: SwipeAction[];
 }
 
+function generateDeviceId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 class SessionService {
   private currentSession: SessionState | null = null;
 
-  /**
-   * Initialize or resume a session
-   */
+  private async registerOrGetUser(): Promise<string> {
+    const cachedUserId = await AsyncStorage.getItem(USER_ID_STORAGE_KEY);
+    if (cachedUserId) return cachedUserId;
+
+    let deviceId = await AsyncStorage.getItem(DEVICE_ID_STORAGE_KEY);
+    if (!deviceId) {
+      deviceId = generateDeviceId();
+      await AsyncStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+    }
+
+    const response = await api.registerUser(deviceId);
+    if (!response.success || !response.data) {
+      throw new Error('Failed to register user');
+    }
+
+    await AsyncStorage.setItem(USER_ID_STORAGE_KEY, response.data.id);
+    return response.data.id;
+  }
+
   async initializeSession(): Promise<string> {
     try {
-      // Try to load existing session
       const savedSession = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
       const savedActions = await AsyncStorage.getItem(SESSION_ACTIONS_KEY);
 
       if (savedSession && savedActions) {
         this.currentSession = JSON.parse(savedSession);
-        this.currentSession.actions = JSON.parse(savedActions);
-        console.log('Resumed session:', this.currentSession.sessionId);
-        return this.currentSession.sessionId;
+        this.currentSession!.actions = JSON.parse(savedActions);
+        console.log('Resumed session:', this.currentSession!.sessionId);
+        return this.currentSession!.sessionId;
       }
 
-      // Create new session
-      const response = await api.createSession();
+      const userId = await this.registerOrGetUser();
+      const response = await api.createSession(userId);
 
       if (!response.success || !response.data) {
         throw new Error('Failed to create session');
       }
 
       this.currentSession = {
-        sessionId: response.data.sessionId,
+        sessionId: response.data.id,
         startTime: Date.now(),
         actions: [],
       };
 
-      // Save to AsyncStorage
       await this.saveSession();
       console.log('Created new session:', this.currentSession.sessionId);
-
       return this.currentSession.sessionId;
     } catch (error) {
       console.error('Error initializing session:', error);
-      // Fallback: create a local session
       this.currentSession = {
         sessionId: `local-${Date.now()}`,
         startTime: Date.now(),
@@ -61,9 +84,6 @@ class SessionService {
     }
   }
 
-  /**
-   * Record a swipe action
-   */
   async recordSwipe(photoId: string, action: 'keep' | 'delete'): Promise<boolean> {
     if (!this.currentSession) {
       console.error('No active session');
@@ -71,30 +91,25 @@ class SessionService {
     }
 
     try {
-      const swipeAction: SwipeAction = {
-        photoId,
-        action,
-        timestamp: Date.now(),
-      };
+      const swipeAction: SwipeAction = { photoId, action, timestamp: Date.now() };
 
-      // Record to API
+      const photo = useSwipeStore.getState().photos.find((p) => p.id === photoId);
+
       const response = await api.recordSwipe(
         this.currentSession.sessionId,
-        photoId,
+        photo?.uri ?? photoId,
+        photo?.filename ?? photoId,
+        photo?.fileSize ?? 0,
         action
       );
 
       if (!response.success) {
-        console.warn('API recordSwipe returned false, but continuing locally');
+        console.warn('API recordSwipe failed, continuing locally');
       }
 
-      // Add to local session
       this.currentSession.actions.push(swipeAction);
-
-      // Save to AsyncStorage
       await this.saveSession();
 
-      // Haptic feedback
       if (action === 'keep') {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
@@ -108,9 +123,6 @@ class SessionService {
     }
   }
 
-  /**
-   * Undo the last swipe
-   */
   async undoSwipe(): Promise<boolean> {
     if (!this.currentSession || this.currentSession.actions.length === 0) {
       console.error('No actions to undo');
@@ -120,30 +132,20 @@ class SessionService {
     let lastAction: SwipeAction | undefined;
     try {
       lastAction = this.currentSession.actions.pop();
-      if (!lastAction) {
-        return false;
-      }
+      if (!lastAction) return false;
 
-      // Record undo to API
-      const response = await api.undoSwipe(
-        this.currentSession.sessionId,
-        lastAction.photoId
-      );
+      const response = await api.undoSwipe(this.currentSession.sessionId);
 
       if (!response.success) {
-        console.warn('API undoSwipe returned false, but continuing locally');
+        console.warn('API undoSwipe failed, continuing locally');
       }
 
-      // Save to AsyncStorage
       await this.saveSession();
-
-      // Haptic feedback
       await Haptics.selectionAsync();
 
       return true;
     } catch (error) {
       console.error('Error undoing swipe:', error);
-      // Re-add the action since the undo failed
       if (lastAction) {
         this.currentSession.actions.push(lastAction);
       }
@@ -151,24 +153,17 @@ class SessionService {
     }
   }
 
-  /**
-   * End the current session
-   */
   async endSession(): Promise<boolean> {
-    if (!this.currentSession) {
-      return false;
-    }
+    if (!this.currentSession) return false;
 
     try {
       const response = await api.endSession(this.currentSession.sessionId);
 
       if (!response.success) {
-        console.warn('API endSession returned false');
+        console.warn('API endSession failed');
       }
 
-      // Clear from AsyncStorage
       await AsyncStorage.multiRemove([SESSION_STORAGE_KEY, SESSION_ACTIONS_KEY]);
-
       this.currentSession = null;
       return true;
     } catch (error) {
@@ -177,34 +172,24 @@ class SessionService {
     }
   }
 
-  /**
-   * Get current session ID
-   */
   getSessionId(): string | null {
-    return this.currentSession?.sessionId || null;
+    return this.currentSession?.sessionId ?? null;
   }
 
-  /**
-   * Get all actions in current session
-   */
+  async getUserId(): Promise<string | null> {
+    return AsyncStorage.getItem(USER_ID_STORAGE_KEY);
+  }
+
   getActions(): SwipeAction[] {
-    return this.currentSession?.actions || [];
+    return this.currentSession?.actions ?? [];
   }
 
-  /**
-   * Save session to AsyncStorage
-   */
   private async saveSession(): Promise<void> {
-    if (!this.currentSession) {
-      return;
-    }
+    if (!this.currentSession) return;
 
     try {
       await AsyncStorage.multiSet([
-        [SESSION_STORAGE_KEY, JSON.stringify({
-          sessionId: this.currentSession.sessionId,
-          startTime: this.currentSession.startTime,
-        })],
+        [SESSION_STORAGE_KEY, JSON.stringify({ sessionId: this.currentSession.sessionId, startTime: this.currentSession.startTime })],
         [SESSION_ACTIONS_KEY, JSON.stringify(this.currentSession.actions)],
       ]);
     } catch (error) {
@@ -212,9 +197,6 @@ class SessionService {
     }
   }
 
-  /**
-   * Clear all stored sessions (for testing/debugging)
-   */
   async clearAllSessions(): Promise<void> {
     try {
       await AsyncStorage.multiRemove([SESSION_STORAGE_KEY, SESSION_ACTIONS_KEY]);

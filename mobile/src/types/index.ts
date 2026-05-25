@@ -3,9 +3,11 @@
 export interface Photo {
   id: string;
   uri: string;
+  filename: string;
   width: number;
   height: number;
   creationTime: number;
+  fileSize: number;
 }
 
 export interface SwipeAction {
