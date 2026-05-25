@@ -16,6 +16,7 @@ import DeleteReviewScreen from '../delete/DeleteReviewScreen';
 import SwipeCard from './SwipeCard';
 
 export default function SwipeScreen() {
+  // Start loading=true; stays true until after hydration check completes.
   const [isLoading, setIsLoading] = useState(true);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,38 +33,63 @@ export default function SwipeScreen() {
   const undoSwipe = useSwipeStore((state) => state.undoSwipe);
   const setSessionId = useSwipeStore((state) => state.setSessionId);
 
-  // Request permission, init session, load first batch
+  // Wait for the persist middleware to finish reading from AsyncStorage before
+  // deciding whether to resume or start fresh. Without this gate, initializePhotos
+  // would run before the store hydrates and would always reset currentIndex to 0.
   useEffect(() => {
-    (async () => {
-      const granted = await requestPermission();
-      setPermissionGranted(granted);
+    const run = () => initGallery();
 
-      if (!granted) {
-        setError('Photo library access is required. Please enable it in Settings.');
+    if (useSwipeStore.persist.hasHydrated()) {
+      run();
+    } else {
+      const unsub = useSwipeStore.persist.onFinishHydration(run);
+      return unsub;
+    }
+  }, []);
+
+  const initGallery = async () => {
+    const granted = await requestPermission();
+    setPermissionGranted(granted);
+
+    if (!granted) {
+      setError('Photo library access is required. Please enable it in Settings.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Resume: store has photos and a sessionId from a previous run.
+    // sessionService.initializeSession() restores its own in-memory state from
+    // AsyncStorage, so the swipe-action log is also intact.
+    const { sessionId: storedSessionId, photos: storedPhotos } =
+      useSwipeStore.getState();
+
+    if (storedSessionId !== null && storedPhotos.length > 0) {
+      const sessionId = await sessionService.initializeSession();
+      setSessionId(sessionId);
+      setIsLoading(false);
+      return;
+    }
+
+    // Fresh start: create session then load first batch of photos.
+    try {
+      const sessionId = await sessionService.initializeSession();
+      setSessionId(sessionId);
+
+      const { photos: batch, nextCursor: cursor } = await loadPhotoBatch();
+      if (batch.length === 0) {
+        setError('No photos found in your library.');
         setIsLoading(false);
         return;
       }
 
-      try {
-        const sessionId = await sessionService.initializeSession();
-        setSessionId(sessionId);
-
-        const { photos: batch, nextCursor: cursor } = await loadPhotoBatch();
-        if (batch.length === 0) {
-          setError('No photos found in your library.');
-          setIsLoading(false);
-          return;
-        }
-
-        initializePhotos(batch);
-        setNextCursor(cursor);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load photos.');
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+      initializePhotos(batch);
+      setNextCursor(cursor);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load photos.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Load the next batch when 20 photos remain in the queue
   useEffect(() => {
