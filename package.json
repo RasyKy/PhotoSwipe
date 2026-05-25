@@ -1,0 +1,13 @@
+{
+  "name": "photoswipe-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "install:mobile": "npm install --prefix mobile",
+    "install:backend": "pip install -r backend/requirements.txt",
+    "install:all": "npm run install:mobile && npm run install:backend",
+    "mobile": "npm start --prefix mobile",
+    "backend": "cd backend && uvicorn app.main:app --reload",
+    "dev": "npm run backend & npm run mobile"
+  }
+}
