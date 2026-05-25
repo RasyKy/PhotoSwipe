@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    env:
+      SUPABASE_URL: https://dummy.supabase.co
+      SUPABASE_KEY: dummy-key
+      SUPABASE_STORAGE_BUCKET: photo-backups
+      UPSTASH_REDIS_REST_URL: https://dummy-redis.upstash.io
+      UPSTASH_REDIS_REST_TOKEN: dummy-token
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest app/tests/ -v
