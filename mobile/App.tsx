@@ -2,13 +2,13 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import GalleryScreen from './src/screens/GalleryScreen';
+import SwipeScreen from './src/features/swipe/SwipeScreen';
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <View style={styles.container}>
-        <GalleryScreen />
+        <SwipeScreen />
         <StatusBar style="auto" />
       </View>
     </SafeAreaProvider>
