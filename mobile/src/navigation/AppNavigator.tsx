@@ -22,6 +22,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer theme={isDarkMode ? DarkTheme : DefaultTheme}>
       <Tab.Navigator
+        sceneContainerStyle={{ backgroundColor: colors.background }}
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: colors.primary,
@@ -33,9 +34,6 @@ export default function AppNavigator() {
           tabBarLabelStyle: {
             fontSize: 12,
             fontWeight: '600',
-          },
-          sceneContainerStyle: {
-            backgroundColor: colors.background,
           },
         }}
       >

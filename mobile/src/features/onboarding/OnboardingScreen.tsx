@@ -1,14 +1,16 @@
 import React, { useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../theme/ThemeContext';
 
 const ONBOARDING_KEY = 'photoswipe_onboarded';
 
-export default function OnboardingScreen() {
+interface Props {
+  onComplete?: () => void;
+}
+
+export default function OnboardingScreen({ onComplete }: Props) {
   const { colors } = useTheme();
-  const navigation = useNavigation();
   const scrollRef = useRef<ScrollView | null>(null);
   const [page, setPage] = useState(0);
 
@@ -29,20 +31,12 @@ export default function OnboardingScreen() {
 
   const handleSkip = async () => {
     await AsyncStorage.setItem(ONBOARDING_KEY, '1');
-    try {
-      // Reset navigation to Dashboard (works when inside a NavigationContainer)
-      // @ts-ignore runtime navigation
-      navigation.reset?.({ index: 0, routes: [{ name: 'Dashboard' }] });
-    } catch (e) {
-      // fallback
-      // @ts-ignore
-      navigation.navigate?.('Dashboard');
-    }
+    onComplete?.();
   };
 
   const handleGetStarted = async () => {
     await AsyncStorage.setItem(ONBOARDING_KEY, '1');
-    await handleSkip();
+    onComplete?.();
   };
 
   const onScroll = (e: any) => {
