@@ -49,7 +49,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView
-        ref={(r) => (scrollRef.current = r)}
+        ref={(r) => { scrollRef.current = r; }}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}

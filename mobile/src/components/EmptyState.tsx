@@ -21,7 +21,7 @@ export default function EmptyState({
 
   return (
     <View style={styles.container}>
-      <View style={[styles.iconWrap, { backgroundColor: colors.primarySoft }]}>
+      <View style={[styles.iconWrap, { backgroundColor: 'rgba(0, 122, 255, 0.1)' }]}>
         {icon ?? <Text style={[styles.fallbackIcon, { color: colors.primary }]}>•</Text>}
       </View>
       <Text style={[styles.title, { color: colors.text }]}>{title}</Text>

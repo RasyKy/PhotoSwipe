@@ -10,6 +10,7 @@ interface SwipeStore {
   swipedPhotos: Set<string>;
   deleteQueue: DeleteQueueItem[];
   sessionId: string | null;
+  totalPhotoCount: number;
 
   // Actions
   initializePhotos: (photos: Photo[]) => void;
@@ -24,6 +25,8 @@ interface SwipeStore {
   setSwipedPhotos: (photoIds: Set<string>) => void;
   setDeleteQueue: (items: DeleteQueueItem[]) => void;
   addPhotos: (newPhotos: Photo[]) => void;
+  setTotalPhotoCount: (count: number) => void;
+  updatePhotoSizes: (updatedPhotos: Photo[]) => void;
   reset: () => void;
 }
 
@@ -67,6 +70,7 @@ export const useSwipeStore = create<SwipeStore>()(
       swipedPhotos: new Set(),
       deleteQueue: [],
       sessionId: null,
+      totalPhotoCount: 0,
 
       initializePhotos: (photos: Photo[]) => {
         const shuffled = shuffleArray(photos);
@@ -182,6 +186,31 @@ export const useSwipeStore = create<SwipeStore>()(
         }));
       },
 
+      setTotalPhotoCount: (count: number) => {
+        set({ totalPhotoCount: count });
+      },
+
+      updatePhotoSizes: (updatedPhotos: Photo[]) => {
+        const sizeMap = new Map(updatedPhotos.map((p) => [p.id, p.fileSize]));
+        const nonZero = updatedPhotos.filter((p) => p.fileSize > 0);
+        console.log('[updatePhotoSizes] total photos:', updatedPhotos.length, '| non-zero sizes:', nonZero.length);
+        console.log('[updatePhotoSizes] first 3 sizes:', updatedPhotos.slice(0, 3).map((p) => ({ id: p.id, fileSize: p.fileSize })));
+        set((state) => {
+          const updatedQueue = state.deleteQueue.map((item) =>
+            sizeMap.has(item.photoId)
+              ? { ...item, size: sizeMap.get(item.photoId)! }
+              : item,
+          );
+          console.log('[updatePhotoSizes] deleteQueue sizes after patch:', updatedQueue.map((i) => ({ photoId: i.photoId, size: i.size })));
+          return {
+            photos: state.photos.map((p) =>
+              sizeMap.has(p.id) ? { ...p, fileSize: sizeMap.get(p.id)! } : p,
+            ),
+            deleteQueue: updatedQueue,
+          };
+        });
+      },
+
       reset: () => {
         set({
           photos: [],
@@ -189,6 +218,7 @@ export const useSwipeStore = create<SwipeStore>()(
           swipedPhotos: new Set(),
           deleteQueue: [],
           sessionId: null,
+          totalPhotoCount: 0,
         });
       },
     }),
@@ -202,6 +232,7 @@ export const useSwipeStore = create<SwipeStore>()(
         swipedPhotos: state.swipedPhotos,
         deleteQueue: state.deleteQueue,
         sessionId: state.sessionId,
+        totalPhotoCount: state.totalPhotoCount,
       }),
     },
   ),

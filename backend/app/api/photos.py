@@ -3,23 +3,37 @@ from fastapi import APIRouter, HTTPException, Request
 from app.models.schemas import (
     ConfirmDeleteRequest,
     ConfirmDeleteResponse,
-    DeleteQueueItemResponse,
     SwipeActionResponse,
+    SwipeBatchRequest,
+    SwipeBatchResponse,
     SwipeRequest,
     UndoResponse,
     UndoSwipeRequest,
 )
 from app.services.photo_service import (
     confirm_delete,
-    get_delete_queue,
     record_swipe,
-    remove_delete_queue_item,
+    record_swipe_batch,
     undo_swipe,
 )
 from app.utils.helpers import error_response, success_response
 from app.utils.limiter import limiter
 
 router = APIRouter()
+
+
+@router.post("/swipe/batch")
+@limiter.limit("300/minute")
+def swipe_batch(request: Request, req: SwipeBatchRequest):
+    try:
+        result = record_swipe_batch(req.session_id, [s.model_dump() for s in req.swipes])
+        return success_response(SwipeBatchResponse(**result).model_dump())
+    except LookupError as e:
+        return error_response(str(e), 404)
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(str(e), 500)
 
 
 @router.post("/swipe")
@@ -54,37 +68,13 @@ def undo(request: Request, req: UndoSwipeRequest):
         return error_response(str(e), 500)
 
 
-@router.get("/delete-queue")
-def queue(session_id: str):
-    try:
-        items = get_delete_queue(session_id)
-        return success_response([DeleteQueueItemResponse(**i).model_dump() for i in items])
-    except HTTPException:
-        raise
-    except Exception as e:
-        return error_response(str(e), 500)
-
-
-@router.delete("/delete-queue/{item_id}")
-def remove_item(item_id: str):
-    try:
-        result = remove_delete_queue_item(item_id)
-        return success_response(result)
-    except LookupError as e:
-        return error_response(str(e), 404)
-    except HTTPException:
-        raise
-    except Exception as e:
-        return error_response(str(e), 500)
-
-
 @router.post("/confirm-delete")
 def confirm(req: ConfirmDeleteRequest):
     try:
-        result = confirm_delete(req.session_id)
+        result = confirm_delete(req.session_id, req.deleted_count, req.storage_freed_bytes)
         return success_response(ConfirmDeleteResponse(**result).model_dump())
-    except ValueError as e:
-        return error_response(str(e), 400)
+    except LookupError as e:
+        return error_response(str(e), 404)
     except HTTPException:
         raise
     except Exception as e:

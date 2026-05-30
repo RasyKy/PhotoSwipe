@@ -12,10 +12,13 @@ const DEVICE_ID_STORAGE_KEY = 'photoswipe_device_id';
 type SettingsState = {
   darkMode: boolean;
   hapticEnabled: boolean;
+  backupEnabled: boolean;
   setDarkMode: (enabled: boolean) => void;
   toggleDarkMode: () => void;
   setHapticEnabled: (enabled: boolean) => void;
   toggleHapticEnabled: () => void;
+  setBackupEnabled: (enabled: boolean) => void;
+  toggleBackupEnabled: () => void;
   resetSettings: () => void;
   clearAllData: () => Promise<void>;
 };
@@ -23,6 +26,7 @@ type SettingsState = {
 const initialState = {
   darkMode: false,
   hapticEnabled: true,
+  backupEnabled: false,
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -34,6 +38,9 @@ export const useSettingsStore = create<SettingsState>()(
       setHapticEnabled: (enabled) => set({ hapticEnabled: enabled }),
       toggleHapticEnabled: () =>
         set((state) => ({ hapticEnabled: !state.hapticEnabled })),
+      setBackupEnabled: (enabled) => set({ backupEnabled: enabled }),
+      toggleBackupEnabled: () =>
+        set((state) => ({ backupEnabled: !state.backupEnabled })),
       resetSettings: () => set(initialState),
       clearAllData: async () => {
         useSwipeStore.getState().reset();
@@ -54,6 +61,7 @@ export const useSettingsStore = create<SettingsState>()(
       partialize: (state) => ({
         darkMode: state.darkMode,
         hapticEnabled: state.hapticEnabled,
+        backupEnabled: state.backupEnabled,
       }),
     }
   )

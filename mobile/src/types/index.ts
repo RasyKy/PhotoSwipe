@@ -8,6 +8,7 @@ export interface Photo {
   height: number;
   creationTime: number;
   fileSize: number;
+  isScreenshot: boolean;
 }
 
 export interface SwipeAction {

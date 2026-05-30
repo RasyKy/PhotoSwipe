@@ -1,165 +1,94 @@
 import React from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
-import { ConfirmDialog, ErrorState, LoadingSpinner, StatCard } from '../../components';
-import { useSettingsStore } from '../../stores/settingsStore';
+import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { sharedStyles } from '../../theme/styles';
+import { spacing } from '../../theme/spacing';
+import { typography } from '../../theme/typography';
 
 export default function SettingsScreen() {
   const { colors, isDarkMode, hapticEnabled, toggleDarkMode, toggleHapticEnabled } = useTheme();
-  const clearAllData = useSettingsStore((state) => state.clearAllData);
-
-  const handleClearAllData = async () => {
-    ConfirmDialog({
-      title: 'Clear all data?',
-      message: 'This will remove session data, saved user IDs, and app preferences from this device.',
-      confirmText: 'Clear',
-      destructive: true,
-      onConfirm: async () => {
-        try {
-          await clearAllData();
-        } catch (error) {
-          Alert.alert('Unable to clear data', 'Please try again.');
-        }
-      },
-    });
-  };
+  const backupEnabled = useSettingsStore((state) => state.backupEnabled);
+  const toggleBackupEnabled = useSettingsStore((state) => state.toggleBackupEnabled);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+    <SafeAreaView style={[styles.fill, { backgroundColor: colors.background }]} edges={['top']}>
+      <ScrollView
+        style={[styles.fill, { backgroundColor: colors.background }]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[typography.title2, styles.pageTitle, { color: colors.text }]}>
+          Settings
+        </Text>
 
-      <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Preferences</Text>
+        <Text style={[sharedStyles.sectionHeader, { color: colors.textSecondary }]}>
+          Preferences
+        </Text>
 
-        <View style={styles.row}>
-          <View style={styles.rowText}>
-            <Text style={[styles.rowLabel, { color: colors.text }]}>Dark Mode</Text>
-            <Text style={[styles.rowDescription, { color: colors.textSecondary }]}>Use a darker color palette across the app</Text>
+        <View style={[sharedStyles.card, { backgroundColor: colors.surface }]}>
+          <View style={styles.row}>
+            <Text style={[typography.body, { color: colors.text }]}>Dark Mode</Text>
+            <Switch
+              value={isDarkMode}
+              onValueChange={toggleDarkMode}
+              trackColor={{ false: colors.separator, true: '#34C75940' }}
+              thumbColor={isDarkMode ? colors.success : colors.surface}
+            />
           </View>
-          <Switch value={isDarkMode} onValueChange={toggleDarkMode} trackColor={{ false: colors.border, true: colors.primarySoft }} thumbColor={isDarkMode ? colors.primary : '#F4F4F5'} />
-        </View>
 
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={[styles.separator, { backgroundColor: colors.separator }]} />
 
-        <View style={styles.row}>
-          <View style={styles.rowText}>
-            <Text style={[styles.rowLabel, { color: colors.text }]}>Haptic Feedback</Text>
-            <Text style={[styles.rowDescription, { color: colors.textSecondary }]}>Vibrate on supported actions and confirmations</Text>
+          <View style={styles.row}>
+            <Text style={[typography.body, { color: colors.text }]}>Haptic Feedback</Text>
+            <Switch
+              value={hapticEnabled}
+              onValueChange={toggleHapticEnabled}
+              trackColor={{ false: colors.separator, true: '#34C75940' }}
+              thumbColor={hapticEnabled ? colors.success : colors.surface}
+            />
           </View>
-          <Switch value={hapticEnabled} onValueChange={toggleHapticEnabled} trackColor={{ false: colors.border, true: colors.primarySoft }} thumbColor={hapticEnabled ? colors.primary : '#F4F4F5'} />
+
+          <View style={[styles.separator, { backgroundColor: colors.separator }]} />
+
+          <View style={styles.row}>
+            <Text style={[typography.body, { color: colors.text }]}>Backup Before Deletion</Text>
+            <Switch
+              value={backupEnabled}
+              onValueChange={toggleBackupEnabled}
+              trackColor={{ false: colors.separator, true: '#34C75940' }}
+              thumbColor={backupEnabled ? colors.success : colors.surface}
+            />
+          </View>
         </View>
-      </View>
-
-      <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
-
-        <View style={styles.aboutGrid}>
-          <StatCard value="PhotoSwipe" label="App name" accentColor={colors.primary} />
-          <StatCard value="1.0.0" label="Version" accentColor={colors.success} />
-        </View>
-
-        <View style={styles.aboutBlock}>
-          <Text style={[styles.aboutLabel, { color: colors.textSecondary }]}>Team Members</Text>
-          <Text style={[styles.aboutValue, { color: colors.text }]}>Student A, Student B</Text>
-        </View>
-      </View>
-
-      <View style={styles.actions}>
-        <Pressable
-          onPress={handleClearAllData}
-          style={({ pressed }) => [
-            styles.clearButton,
-            { backgroundColor: colors.danger, opacity: pressed ? 0.88 : 1 },
-          ]}
-        >
-          <Text style={styles.clearButtonText}>Clear All Data</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.footerNote}>
-        <LoadingSpinner message="Settings are saved automatically." size="small" />
-      </View>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  fill: {
     flex: 1,
-    padding: 20,
-    gap: 16,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+  content: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xl,
+    gap: spacing.lg,
   },
-  section: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 14,
+  pageTitle: {
+    marginBottom: spacing.sm,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
   },
-  rowText: {
-    flex: 1,
-  },
-  rowLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  rowDescription: {
-    marginTop: 4,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  divider: {
+  separator: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: 14,
-  },
-  aboutGrid: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  aboutBlock: {
-    marginTop: 4,
-    gap: 4,
-  },
-  aboutLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  aboutValue: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  actions: {
-    marginTop: 4,
-  },
-  clearButton: {
-    minHeight: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clearButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  footerNote: {
-    marginTop: 'auto',
+    marginLeft: spacing.md,
   },
 });

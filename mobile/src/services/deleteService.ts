@@ -1,6 +1,7 @@
 import * as MediaLibrary from 'expo-media-library';
 import api from './api';
 import { sessionService } from './sessionService';
+import { useSettingsStore } from '../stores/settingsStore';
 import { DeleteQueueItem } from '../types/index';
 
 export interface DeleteProgress {
@@ -10,7 +11,23 @@ export interface DeleteProgress {
   error?: string;
 }
 
+export type DeleteErrorType = 'PERMISSION_DENIED';
+
+export interface DeleteResult {
+  success: boolean;
+  deletedCount: number;
+  failedCount: number;
+  storageSavedBytes: number;
+  errorType?: DeleteErrorType;
+}
+
 type ProgressCallback = (progress: DeleteProgress) => void;
+
+function isPermissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message.toLowerCase();
+  return msg.includes('permission') || msg.includes('denied') || msg.includes('access');
+}
 
 class DeleteService {
   /**
@@ -20,57 +37,91 @@ class DeleteService {
     photoIds: string[],
     deleteQueueItems: DeleteQueueItem[],
     onProgress?: ProgressCallback
-  ): Promise<{ success: boolean; deletedCount: number; failedCount: number }> {
+  ): Promise<DeleteResult> {
     if (photoIds.length === 0) {
-      return { success: true, deletedCount: 0, failedCount: 0 };
+      return { success: true, deletedCount: 0, failedCount: 0, storageSavedBytes: 0 };
     }
 
     try {
-      // 1. Confirm deletion with API
       if (onProgress) {
         onProgress({ completed: 0, total: photoIds.length });
       }
-      
-      const sessionId = sessionService.getSessionId() ?? '';
-      const apiResponse = await api.confirmDelete(sessionId);
-      if (!apiResponse.success) {
-        console.warn('API confirmDelete returned false');
+
+      const { backupEnabled } = useSettingsStore.getState();
+      if (backupEnabled) {
+        const userId = (await sessionService.getUserId()) ?? '';
+        await Promise.all(
+          deleteQueueItems.map(async (item) => {
+            try {
+              const photoName = item.uri.split('/').pop() ?? 'photo.jpg';
+              await api.backupUpload(userId, item.uri, photoName);
+            } catch (err) {
+              console.error(`Backup failed for ${item.photoId}, continuing:`, err);
+            }
+          }),
+        );
       }
 
-      // 2. Delete from device in one go (more efficient)
+      const sessionId = sessionService.getSessionId() ?? '';
+
       try {
         await MediaLibrary.deleteAssetsAsync(photoIds);
-        
+
         if (onProgress) {
           onProgress({ completed: photoIds.length, total: photoIds.length });
         }
-        
-        return { success: true, deletedCount: photoIds.length, failedCount: 0 };
+
+        const storageSavedBytes = deleteQueueItems.reduce((sum, item) => sum + item.size, 0);
+        api.confirmDelete(sessionId, photoIds.length, storageSavedBytes).catch((err) => {
+          console.error('confirmDelete sync failed:', err);
+        });
+
+        return { success: true, deletedCount: photoIds.length, failedCount: 0, storageSavedBytes };
       } catch (error) {
+        if (isPermissionError(error)) {
+          return { success: false, deletedCount: 0, failedCount: photoIds.length, storageSavedBytes: 0, errorType: 'PERMISSION_DENIED' };
+        }
+
         console.error('Batch deletion failed, trying individually:', error);
-        
-        // Fallback to individual deletion if batch fails
+
         let deletedCount = 0;
         let failedCount = 0;
+        let storageSavedBytes = 0;
 
         for (let i = 0; i < photoIds.length; i++) {
           try {
             await MediaLibrary.deleteAssetsAsync([photoIds[i]]);
             deletedCount++;
+            storageSavedBytes += deleteQueueItems[i]?.size ?? 0;
           } catch (err) {
+            if (isPermissionError(err)) {
+              return {
+                success: false,
+                deletedCount,
+                failedCount: photoIds.length - deletedCount,
+                storageSavedBytes,
+                errorType: 'PERMISSION_DENIED',
+              };
+            }
             failedCount++;
           }
-          
+
           if (onProgress) {
             onProgress({ completed: i + 1, total: photoIds.length });
           }
         }
 
-        return { success: failedCount === 0, deletedCount, failedCount };
+        if (deletedCount > 0) {
+          api.confirmDelete(sessionId, deletedCount, storageSavedBytes).catch((err) => {
+            console.error('confirmDelete sync failed:', err);
+          });
+        }
+
+        return { success: failedCount === 0, deletedCount, failedCount, storageSavedBytes };
       }
     } catch (error) {
       console.error('Error in deletePhotos:', error);
-      return { success: false, deletedCount: 0, failedCount: photoIds.length };
+      return { success: false, deletedCount: 0, failedCount: photoIds.length, storageSavedBytes: 0 };
     }
   }
 

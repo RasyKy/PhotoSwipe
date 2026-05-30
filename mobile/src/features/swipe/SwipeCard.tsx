@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Dimensions, Image, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Extrapolation,
@@ -11,7 +12,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Photo } from '../../types/index';
-import { formatFileSize } from '../../utils/fileSize';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -29,6 +29,7 @@ interface SwipeCardProps {
 const SwipeCard: React.FC<SwipeCardProps> = ({ photo, nextPhoto, onSwipeLeft, onSwipeRight }) => {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const [imageError, setImageError] = useState(false);
 
   const pan = Gesture.Pan()
     .onUpdate((event) => {
@@ -45,12 +46,10 @@ const SwipeCard: React.FC<SwipeCardProps> = ({ photo, nextPhoto, onSwipeLeft, on
 
       if (pastThreshold || fastFlick) {
         const goRight = translateX.value > 0 || event.velocityX > 0;
+        runOnJS(goRight ? onSwipeRight : onSwipeLeft)();
         translateX.value = withTiming(
           goRight ? SCREEN_WIDTH * 1.5 : -SCREEN_WIDTH * 1.5,
-          { duration: 350 },
-          () => {
-            runOnJS(goRight ? onSwipeRight : onSwipeLeft)();
-          },
+          { duration: 250 },
         );
       } else {
         translateX.value = withSpring(0, { damping: 18, stiffness: 200 });
@@ -121,7 +120,24 @@ const SwipeCard: React.FC<SwipeCardProps> = ({ photo, nextPhoto, onSwipeLeft, on
 
       <GestureDetector gesture={pan}>
         <Animated.View style={[styles.card, styles.frontCard, frontCardStyle]}>
-          <Image source={{ uri: photo.uri }} style={styles.image} resizeMode="cover" />
+          {imageError ? (
+            <View style={styles.imagePlaceholder}>
+              <Ionicons name="image-outline" size={48} color="#C7C7CC" />
+            </View>
+          ) : (
+            <Image
+              source={{ uri: photo.uri }}
+              style={styles.image}
+              resizeMode="cover"
+              onError={() => setImageError(true)}
+            />
+          )}
+
+          {photo.isScreenshot && (
+            <View style={styles.screenshotBadge}>
+              <Text style={styles.screenshotBadgeText}>Screenshot</Text>
+            </View>
+          )}
 
           <Animated.View style={[styles.label, styles.keepLabel, keepLabelStyle]}>
             <Text style={[styles.labelText, styles.keepText]}>KEEP</Text>
@@ -131,12 +147,7 @@ const SwipeCard: React.FC<SwipeCardProps> = ({ photo, nextPhoto, onSwipeLeft, on
             <Text style={[styles.labelText, styles.deleteText]}>DELETE</Text>
           </Animated.View>
 
-          <View style={styles.infoBar}>
-            <Text style={styles.filename} numberOfLines={1} ellipsizeMode="middle">
-              {photo.filename}
-            </Text>
-            <Text style={styles.fileSize}>{formatFileSize(photo.fileSize)}</Text>
-          </View>
+
         </Animated.View>
       </GestureDetector>
     </View>
@@ -152,15 +163,15 @@ const styles = StyleSheet.create({
   card: {
     position: 'absolute',
     width: CARD_WIDTH,
-    height: '85%',
-    borderRadius: 16,
+    height: '92%',
+    borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#000000',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 5,
   },
   frontCard: {
     zIndex: 2,
@@ -171,6 +182,13 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F2F2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     position: 'absolute',
@@ -191,7 +209,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '15deg' }],
   },
   labelText: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800',
     letterSpacing: 2,
   },
@@ -201,28 +219,19 @@ const styles = StyleSheet.create({
   deleteText: {
     color: '#ff3b30',
   },
-  infoBar: {
+  screenshotBadge: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 99,
   },
-  filename: {
-    flex: 1,
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '500',
-    marginRight: 10,
-  },
-  fileSize: {
-    color: '#cccccc',
-    fontSize: 12,
+  screenshotBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
 

@@ -1,52 +1,55 @@
 export type ThemeColors = {
   background: string;
   surface: string;
-  surfaceElevated: string;
-  card: string;
-  border: string;
+  surfaceSecondary: string;
   text: string;
   textSecondary: string;
-  textMuted: string;
+  textTertiary: string;
+  separator: string;
   primary: string;
-  primarySoft: string;
   success: string;
-  warning: string;
   danger: string;
-  overlay: string;
+  warning: string;
+  tabBar: string;
+  tabBarBorder: string;
+  tabBarActive: string;
+  tabBarInactive: string;
 };
 
 export const lightColors: ThemeColors = {
-  background: '#F6F7FB',
+  background: '#FFFFFF',
   surface: '#FFFFFF',
-  surfaceElevated: '#FFFFFF',
-  card: '#FFFFFF',
-  border: '#DCE1EA',
-  text: '#121826',
-  textSecondary: '#4B5565',
-  textMuted: '#768097',
-  primary: '#2563EB',
-  primarySoft: '#DBEAFE',
-  success: '#16A34A',
-  warning: '#D97706',
-  danger: '#DC2626',
-  overlay: 'rgba(18, 24, 38, 0.45)',
+  surfaceSecondary: '#F2F2F7',
+  text: '#000000',
+  textSecondary: '#8E8E93',
+  textTertiary: '#C7C7CC',
+  separator: '#C6C6C8',
+  primary: '#007AFF',
+  success: '#34C759',
+  danger: '#FF3B30',
+  warning: '#FF9500',
+  tabBar: '#FFFFFF',
+  tabBarBorder: '#C6C6C8',
+  tabBarActive: '#007AFF',
+  tabBarInactive: '#8E8E93',
 };
 
 export const darkColors: ThemeColors = {
-  background: '#0B1020',
-  surface: '#121A2B',
-  surfaceElevated: '#182138',
-  card: '#182138',
-  border: '#243049',
-  text: '#F5F7FB',
-  textSecondary: '#C1CAD8',
-  textMuted: '#8D98AB',
-  primary: '#60A5FA',
-  primarySoft: '#1E3A8A',
-  success: '#4ADE80',
-  warning: '#FBBF24',
-  danger: '#F87171',
-  overlay: 'rgba(5, 9, 18, 0.62)',
+  background: '#1C1C1E',
+  surface: '#2C2C2E',
+  surfaceSecondary: '#3A3A3C',
+  text: '#FFFFFF',
+  textSecondary: '#8E8E93',
+  textTertiary: '#636366',
+  separator: '#38383A',
+  primary: '#0A84FF',
+  success: '#30D158',
+  danger: '#FF453A',
+  warning: '#FF9F0A',
+  tabBar: '#1C1C1E',
+  tabBarBorder: '#38383A',
+  tabBarActive: '#0A84FF',
+  tabBarInactive: '#636366',
 };
 
 export const themeColors = {

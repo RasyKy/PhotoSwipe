@@ -1,19 +1,57 @@
 import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Photo } from '../types/index';
 
-// Request MEDIA_LIBRARY permissions
-export async function requestPermission(): Promise<boolean> {
+export type PermissionResult = {
+  granted: boolean;
+  canRetry: boolean;
+};
+
+export async function requestPermission(): Promise<PermissionResult> {
   try {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    return status === 'granted';
+    const { status, canAskAgain } = await MediaLibrary.requestPermissionsAsync(false, ['photo', 'video']);
+    if (status === 'granted') {
+      return { granted: true, canRetry: false };
+    }
+    return { granted: false, canRetry: canAskAgain };
   } catch (error) {
     console.error('Failed to request media library permissions:', error);
-    return false;
+    return { granted: false, canRetry: true };
   }
 }
 
-// Convert MediaLibrary.Asset to Photo type
-function assetToPhoto(asset: MediaLibrary.Asset): Photo {
+function isScreenshot(filename: string): boolean {
+  return filename.toLowerCase().includes('screenshot');
+}
+
+// TODO: remove after Android file size debugging is done
+let _debugLogged = false;
+
+// getAssetsAsync does not populate fileSize on Android (SDK 54).
+// Primary: getAssetInfoAsync returns a richer object that includes fileSize on both platforms.
+// Fallback: FileSystem.getInfoAsync using localUri (content:// URIs may not resolve via FileSystem).
+async function assetToPhoto(asset: MediaLibrary.Asset): Promise<Photo> {
+  const isFirst = !_debugLogged;
+  if (isFirst) {
+    _debugLogged = true;
+    console.log('[gallery debug] raw asset from getAssetsAsync:', JSON.stringify(asset, null, 2));
+  }
+
+  let fileSize = 0;
+  try {
+    const assetInfo = await MediaLibrary.getAssetInfoAsync(asset);
+    if (isFirst) {
+      console.log('[gallery debug] getAssetInfoAsync result:', JSON.stringify(assetInfo, null, 2));
+      console.log('[gallery debug] localUri:', assetInfo.localUri);
+    }
+    if (assetInfo.localUri) {
+      const info = await FileSystem.getInfoAsync(assetInfo.localUri);
+      fileSize = info.exists ? info.size : 0;
+    }
+  } catch (err) {
+    console.warn('[gallery] getInfoAsync failed:', err);
+    fileSize = 0;
+  }
   return {
     id: asset.id,
     uri: asset.uri,
@@ -21,7 +59,8 @@ function assetToPhoto(asset: MediaLibrary.Asset): Photo {
     width: asset.width,
     height: asset.height,
     creationTime: asset.creationTime,
-    fileSize: (asset as any).fileSize ?? 0,
+    fileSize,
+    isScreenshot: isScreenshot(asset.filename),
   };
 }
 
@@ -38,8 +77,10 @@ export async function loadPhotoBatch(after?: string): Promise<{
       mediaType: [MediaLibrary.MediaType.photo],
     });
 
+    const photos = await Promise.all(result.assets.map(assetToPhoto));
+
     return {
-      photos: result.assets.map(assetToPhoto),
+      photos,
       nextCursor: result.endCursor || undefined,
     };
   } catch (error) {
@@ -48,6 +89,55 @@ export async function loadPhotoBatch(after?: string): Promise<{
       photos: [],
       nextCursor: undefined,
     };
+  }
+}
+
+// Re-fetch file sizes for photos that were restored from AsyncStorage with stale fileSize: 0.
+// Processed in batches of 20 to avoid overwhelming the device with concurrent stat calls.
+async function refreshSinglePhotoSize(photo: Photo): Promise<Photo> {
+  console.log('[refreshSize] processing photo id:', photo.id);
+  try {
+    const assetInfo = await MediaLibrary.getAssetInfoAsync(photo.id);
+    console.log('[refreshSize] localUri:', assetInfo.localUri ?? 'undefined');
+    if (assetInfo.localUri) {
+      const info = await FileSystem.getInfoAsync(assetInfo.localUri);
+      const size = info.exists ? info.size : 0;
+      console.log('[refreshSize] FileSystem size:', size, '| exists:', info.exists);
+      if (size > 0) {
+        console.log('[refreshSize] success — returning size', size, 'for', photo.id);
+        return { ...photo, fileSize: size };
+      }
+      console.log('[refreshSize] fallback — size was 0 or file missing for', photo.id);
+    } else {
+      console.log('[refreshSize] fallback — no localUri for', photo.id);
+    }
+  } catch (err) {
+    console.log('[refreshSize] error for', photo.id, ':', err);
+  }
+  return photo;
+}
+
+export async function refreshPhotoSizes(photos: Photo[]): Promise<Photo[]> {
+  const BATCH_SIZE = 20;
+  const results: Photo[] = [];
+  for (let i = 0; i < photos.length; i += BATCH_SIZE) {
+    const batch = photos.slice(i, i + BATCH_SIZE);
+    const refreshed = await Promise.all(batch.map(refreshSinglePhotoSize));
+    results.push(...refreshed);
+  }
+  return results;
+}
+
+// Get total photo count on device without loading any assets
+export async function getTotalPhotoCount(): Promise<number> {
+  try {
+    const result = await MediaLibrary.getAssetsAsync({
+      first: 1,
+      mediaType: [MediaLibrary.MediaType.photo],
+    });
+    return result.totalCount;
+  } catch {
+    return 0;
   }
 }
 

@@ -1,138 +1,128 @@
-export type DashboardScenario = 'normal' | 'empty' | 'error';
+import { API_KEY, BASE_URL } from './api';
 
 export type DailyActivityPoint = {
   label: string;
   kept: number;
   deleted: number;
-};
-
-export type StoragePoint = {
-  label: string;
-  storageSavedBytes: number;
-};
-
-export type SessionHistoryItem = {
-  id: string;
-  startedAt: number;
-  endedAt: number;
-  photosReviewed: number;
-  kept: number;
-  deleted: number;
-  storageSavedBytes: number;
+  storageMB: number;
 };
 
 export type DashboardAnalytics = {
   summary: {
-    photosReviewed: number;
+    reviewed: number;
     kept: number;
     deleted: number;
     storageSavedBytes: number;
-    sessions: number;
   };
   dailyActivity: DailyActivityPoint[];
-  cumulativeStorage: StoragePoint[];
-  sessionHistory: SessionHistoryItem[];
 };
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const mockDashboardAnalytics: DashboardAnalytics = {
-  summary: {
-    photosReviewed: 342,
-    kept: 219,
-    deleted: 123,
-    storageSavedBytes: 846_531_584,
-    sessions: 8,
-  },
-  dailyActivity: [
-    { label: 'Mon', kept: 24, deleted: 10 },
-    { label: 'Tue', kept: 28, deleted: 12 },
-    { label: 'Wed', kept: 22, deleted: 9 },
-    { label: 'Thu', kept: 31, deleted: 16 },
-    { label: 'Fri', kept: 35, deleted: 14 },
-    { label: 'Sat', kept: 48, deleted: 20 },
-    { label: 'Sun', kept: 31, deleted: 17 },
-  ],
-  cumulativeStorage: [
-    { label: 'Wk 1', storageSavedBytes: 82_554_880 },
-    { label: 'Wk 2', storageSavedBytes: 163_577_856 },
-    { label: 'Wk 3', storageSavedBytes: 284_164_096 },
-    { label: 'Wk 4', storageSavedBytes: 402_653_184 },
-    { label: 'Wk 5', storageSavedBytes: 565_182_464 },
-    { label: 'Wk 6', storageSavedBytes: 713_031_680 },
-    { label: 'Wk 7', storageSavedBytes: 846_531_584 },
-  ],
-  sessionHistory: [
-    {
-      id: 'session-108',
-      startedAt: Date.now() - 1000 * 60 * 60 * 26,
-      endedAt: Date.now() - 1000 * 60 * 60 * 25.5,
-      photosReviewed: 46,
-      kept: 29,
-      deleted: 17,
-      storageSavedBytes: 111_149_056,
-    },
-    {
-      id: 'session-107',
-      startedAt: Date.now() - 1000 * 60 * 60 * 52,
-      endedAt: Date.now() - 1000 * 60 * 60 * 51.25,
-      photosReviewed: 51,
-      kept: 33,
-      deleted: 18,
-      storageSavedBytes: 149_946_368,
-    },
-    {
-      id: 'session-106',
-      startedAt: Date.now() - 1000 * 60 * 60 * 78,
-      endedAt: Date.now() - 1000 * 60 * 60 * 77.5,
-      photosReviewed: 39,
-      kept: 24,
-      deleted: 15,
-      storageSavedBytes: 88_080_384,
-    },
-    {
-      id: 'session-105',
-      startedAt: Date.now() - 1000 * 60 * 60 * 104,
-      endedAt: Date.now() - 1000 * 60 * 60 * 103.25,
-      photosReviewed: 62,
-      kept: 38,
-      deleted: 24,
-      storageSavedBytes: 196_083_712,
-    },
-  ],
+type SummaryResponse = {
+  total_reviewed: number;
+  total_kept: number;
+  total_deleted: number;
+  total_storage_saved_bytes: number;
+  total_sessions: number;
 };
 
-const emptyDashboardAnalytics: DashboardAnalytics = {
-  summary: {
-    photosReviewed: 0,
-    kept: 0,
-    deleted: 0,
-    storageSavedBytes: 0,
-    sessions: 0,
-  },
-  dailyActivity: [],
-  cumulativeStorage: [],
-  sessionHistory: [],
+type HistoryItem = {
+  date: string;
+  reviewed: number;
+  kept: number;
+  deleted: number;
+  storage_saved_bytes: number;
 };
 
-export async function getDashboardAnalytics(
-  scenario: DashboardScenario = 'normal'
-): Promise<DashboardAnalytics> {
-  await delay(650);
+export type SessionItem = {
+  id: string;
+  user_id: string;
+  status: string;
+  total_reviewed: number;
+  total_kept: number;
+  total_deleted: number;
+  storage_saved_bytes: number;
+  started_at: string;
+  ended_at: string | null;
+};
 
-  if (scenario === 'error') {
-    throw new Error('Failed to load dashboard analytics');
+export class OfflineError extends Error {
+  constructor() {
+    super('No internet connection');
+    this.name = 'OfflineError';
   }
-
-  if (scenario === 'empty') {
-    return emptyDashboardAnalytics;
-  }
-
-  return mockDashboardAnalytics;
 }
 
-export const analyticsApi = {
-  getDashboardAnalytics,
-};
+const apiHeaders = () => ({ 'X-API-Key': API_KEY });
 
-export { mockDashboardAnalytics };
+async function getAnalyticsSummary(userId: string): Promise<SummaryResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/analytics/summary?user_id=${userId}`, {
+      headers: apiHeaders(),
+    });
+  } catch {
+    throw new OfflineError();
+  }
+  if (!response.ok) {
+    throw new Error(`Analytics summary request failed: ${response.status}`);
+  }
+  const body = await response.json();
+  return body.data ?? body;
+}
+
+async function getAnalyticsHistory(userId: string): Promise<DailyActivityPoint[]> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${BASE_URL}/analytics/history?user_id=${userId}&period=week`,
+      { headers: apiHeaders() }
+    );
+  } catch {
+    throw new OfflineError();
+  }
+  if (!response.ok) {
+    throw new Error(`Analytics history request failed: ${response.status}`);
+  }
+  const body = await response.json();
+  const items: HistoryItem[] = body.data ?? body;
+  return items.map((item) => ({
+    label: new Date(item.date).toLocaleDateString('en-US', { weekday: 'short' }),
+    kept: item.kept,
+    deleted: item.deleted,
+    storageMB: item.storage_saved_bytes / 1048576,
+  }));
+}
+
+export async function getSessions(userId: string): Promise<SessionItem[]> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}/sessions?user_id=${userId}`, {
+      headers: apiHeaders(),
+    });
+  } catch {
+    throw new OfflineError();
+  }
+  if (!response.ok) {
+    throw new Error(`Sessions request failed: ${response.status}`);
+  }
+  const body = await response.json();
+  return body.data ?? body;
+}
+
+async function getDashboardAnalytics(userId: string): Promise<DashboardAnalytics> {
+  const [summary, dailyActivity] = await Promise.all([
+    getAnalyticsSummary(userId),
+    getAnalyticsHistory(userId),
+  ]);
+  return {
+    summary: {
+      reviewed: summary.total_reviewed,
+      kept: summary.total_kept,
+      deleted: summary.total_deleted,
+      storageSavedBytes: summary.total_storage_saved_bytes,
+    },
+    dailyActivity,
+  };
+}
+
+export const analyticsApi = { getDashboardAnalytics };

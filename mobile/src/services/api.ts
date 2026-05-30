@@ -1,5 +1,7 @@
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://photoswipe.onrender.com/api/v1';
-const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? '';
+import * as FileSystem from 'expo-file-system/legacy';
+
+export const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://photoswipe.onrender.com/api/v1';
+export const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? '';
 const USE_MOCK = false;
 
 interface ApiResponse<T> {
@@ -93,35 +95,12 @@ const realApi = {
     }
   },
 
-  getDeleteQueue: async (sessionId: string): Promise<ApiResponse<{ id: string; photo_uri: string; photo_name: string; file_size_bytes: number; added_at: string }[]>> => {
-    try {
-      const response = await fetch(`${BASE_URL}/photos/delete-queue?session_id=${sessionId}`, {
-        headers: headers(),
-      });
-      return handleResponse(response);
-    } catch {
-      return { success: false, data: null, error: 'Network error' };
-    }
-  },
-
-  removeFromDeleteQueue: async (itemId: string): Promise<ApiResponse<null>> => {
-    try {
-      const response = await fetch(`${BASE_URL}/photos/delete-queue/${itemId}`, {
-        method: 'DELETE',
-        headers: headers(),
-      });
-      return handleResponse(response);
-    } catch {
-      return { success: false, data: null, error: 'Network error' };
-    }
-  },
-
-  confirmDelete: async (sessionId: string): Promise<ApiResponse<{ deleted_count: number; storage_freed_bytes: number }>> => {
+  confirmDelete: async (sessionId: string, deletedCount: number, storageSavedBytes: number): Promise<ApiResponse<{ deleted_count: number; storage_freed_bytes: number }>> => {
     try {
       const response = await fetch(`${BASE_URL}/photos/confirm-delete`, {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ session_id: sessionId }),
+        body: JSON.stringify({ session_id: sessionId, deleted_count: deletedCount, storage_freed_bytes: storageSavedBytes }),
       });
       return handleResponse(response);
     } catch {
@@ -150,6 +129,53 @@ const realApi = {
       return { success: false, data: null, error: 'Network error' };
     }
   },
+
+  recordSwipeBatch: async (
+    sessionId: string,
+    swipes: Array<{ photoUri: string; photoName: string; fileSizeBytes: number; action: 'keep' | 'delete' }>
+  ): Promise<ApiResponse<{ processed: number }>> => {
+    try {
+      const response = await fetch(`${BASE_URL}/photos/swipe/batch`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          session_id: sessionId,
+          swipes: swipes.map((s) => ({
+            photo_uri: s.photoUri,
+            photo_name: s.photoName,
+            file_size_bytes: s.fileSizeBytes,
+            action: s.action,
+          })),
+        }),
+      });
+      return handleResponse<{ processed: number }>(response);
+    } catch {
+      return { success: false, data: null, error: 'Network error' };
+    }
+  },
+
+  backupUpload: async (userId: string, photoUri: string, photoName: string): Promise<ApiResponse<null>> => {
+    try {
+      let base64: string;
+      try {
+        base64 = await FileSystem.readAsStringAsync(photoUri, { encoding: 'base64' });
+      } catch {
+        return { success: false, data: null, error: 'Failed to read photo file' };
+      }
+      const formData = new FormData();
+      formData.append('user_id', userId);
+      formData.append('photo_name', photoName);
+      formData.append('file', base64);
+      const response = await fetch(`${BASE_URL}/backup/upload`, {
+        method: 'POST',
+        headers: { 'X-API-Key': API_KEY },
+        body: formData,
+      });
+      return handleResponse<null>(response);
+    } catch {
+      return { success: false, data: null, error: 'Network error' };
+    }
+  },
 };
 
 const mockApi: typeof realApi = {
@@ -158,11 +184,11 @@ const mockApi: typeof realApi = {
   endSession: async (_sessionId) => ({ success: true, data: null }),
   recordSwipe: async (_sessionId, _photoUri, _photoName, _fileSizeBytes, _action) => ({ success: true, data: { id: 'mock-swipe-id', action: _action, swiped_at: new Date().toISOString() } }),
   undoSwipe: async (_sessionId) => ({ success: true, data: null }),
-  getDeleteQueue: async (_sessionId) => ({ success: true, data: [] }),
-  removeFromDeleteQueue: async (_itemId) => ({ success: true, data: null }),
-  confirmDelete: async (_sessionId) => ({ success: true, data: { deleted_count: 0, storage_freed_bytes: 0 } }),
+  confirmDelete: async (_sessionId, _deletedCount, _storageSavedBytes) => ({ success: true, data: { deleted_count: 0, storage_freed_bytes: 0 } }),
   getAnalyticsSummary: async (_userId) => ({ success: true, data: { total_reviewed: 0, total_kept: 0, total_deleted: 0, total_storage_saved_bytes: 0, total_sessions: 0 } }),
   getAnalyticsHistory: async (_userId, _period) => ({ success: true, data: [] }),
+  recordSwipeBatch: async (_sessionId, swipes) => ({ success: true, data: { processed: swipes.length } }),
+  backupUpload: async (_userId, _photoUri, _photoName) => ({ success: true, data: null }),
 };
 
 const api = USE_MOCK ? mockApi : realApi;

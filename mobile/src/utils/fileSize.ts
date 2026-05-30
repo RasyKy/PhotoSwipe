@@ -1,10 +1,7 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
-/**
- * Format bytes to human-readable size (KB, MB, GB)
- */
-export function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '0 B';
+export function formatFileSize(bytes: number | undefined): string {
+  if (!bytes || bytes <= 0) return '';
 
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];

@@ -32,14 +32,6 @@ def record_swipe(
         }).execute()
         swipe = swipe_result.data[0]
 
-        if action == "delete":
-            supabase.table("delete_queue").insert({
-                "session_id": session_id,
-                "photo_uri": photo_uri,
-                "photo_name": photo_name,
-                "file_size_bytes": file_size_bytes,
-            }).execute()
-
         counter_update = {"total_reviewed": session["total_reviewed"] + 1}
         if action == "keep":
             counter_update["total_kept"] = session["total_kept"] + 1
@@ -109,83 +101,120 @@ def undo_swipe(session_id: str) -> dict:
         raise HTTPException(status_code=503, detail="Database unavailable, please try again later.")
 
 
-def get_delete_queue(session_id: str) -> list[dict]:
-    logger.info("get_delete_queue called session_id=%s", session_id)
+def record_swipe_batch(session_id: str, swipes: list[dict]) -> dict:
+    logger.info("record_swipe_batch called session_id=%s count=%d", session_id, len(swipes))
+    if not swipes:
+        return {"processed": 0}
     try:
         supabase = get_supabase()
-        result = (
-            supabase.table("delete_queue")
+        session = _get_session(supabase, session_id)
+        user_id = session["user_id"]
+
+        keep_count = 0
+        delete_count = 0
+        storage_saved = 0
+
+        for swipe in swipes:
+            action = swipe["action"]
+            supabase.table("swipe_actions").insert({
+                "session_id": session_id,
+                "photo_uri": swipe["photo_uri"],
+                "photo_name": swipe["photo_name"],
+                "file_size_bytes": swipe["file_size_bytes"],
+                "action": action,
+            }).execute()
+            if action == "keep":
+                keep_count += 1
+            else:
+                delete_count += 1
+                storage_saved += swipe["file_size_bytes"]
+
+        processed = keep_count + delete_count
+
+        supabase.table("sessions").update({
+            "total_reviewed": session["total_reviewed"] + processed,
+            "total_kept": session["total_kept"] + keep_count,
+            "total_deleted": session["total_deleted"] + delete_count,
+            "storage_saved_bytes": session["storage_saved_bytes"] + storage_saved,
+        }).eq("id", session_id).execute()
+
+        today = date_type.today().isoformat()
+        existing = (
+            supabase.table("daily_stats")
             .select("*")
-            .eq("session_id", session_id)
-            .eq("confirmed", False)
+            .eq("user_id", user_id)
+            .eq("date", today)
             .execute()
         )
-        logger.info("get_delete_queue returning %d items session_id=%s", len(result.data), session_id)
-        return result.data
-    except Exception as exc:
-        logger.error("Database error in get_delete_queue: %s", exc)
-        raise HTTPException(status_code=503, detail="Database unavailable, please try again later.")
+        if existing.data:
+            row = existing.data[0]
+            supabase.table("daily_stats").update({
+                "reviewed": row["reviewed"] + processed,
+                "kept": row["kept"] + keep_count,
+                "deleted": row["deleted"] + delete_count,
+                "storage_saved_bytes": row["storage_saved_bytes"] + storage_saved,
+            }).eq("user_id", user_id).eq("date", today).execute()
+        else:
+            supabase.table("daily_stats").insert({
+                "user_id": user_id,
+                "date": today,
+                "reviewed": processed,
+                "kept": keep_count,
+                "deleted": delete_count,
+                "storage_saved_bytes": storage_saved,
+            }).execute()
 
-
-def remove_delete_queue_item(item_id: str) -> dict:
-    logger.info("remove_delete_queue_item called item_id=%s", item_id)
-    try:
-        supabase = get_supabase()
-
-        item_result = supabase.table("delete_queue").select("*").eq("id", item_id).execute()
-        if not item_result.data:
-            logger.warning("remove_delete_queue_item not found item_id=%s", item_id)
-            raise LookupError("Delete queue item not found")
-        item = item_result.data[0]
-
-        supabase.table("delete_queue").delete().eq("id", item_id).execute()
-
-        session = _get_session(supabase, item["session_id"])
-        supabase.table("sessions").update({
-            "total_deleted": session["total_deleted"] - 1,
-            "storage_saved_bytes": session["storage_saved_bytes"] - item["file_size_bytes"],
-            "total_kept": session["total_kept"] + 1,
-        }).eq("id", item["session_id"]).execute()
-
-        _update_daily_stats(supabase, session["user_id"], "delete", item["file_size_bytes"], delta=-1)
-        _update_daily_stats(supabase, session["user_id"], "keep", 0, delta=1)
-
-        _invalidate_summary_cache(session["user_id"])
-        logger.info("remove_delete_queue_item completed item_id=%s session_id=%s", item_id, item["session_id"])
-        return {"removed": True}
+        _invalidate_summary_cache(user_id)
+        logger.info("record_swipe_batch completed session_id=%s processed=%d", session_id, processed)
+        return {"processed": processed}
     except (LookupError, HTTPException):
         raise
     except Exception as exc:
-        logger.error("Database error in remove_delete_queue_item: %s", exc)
+        logger.error("Database error in record_swipe_batch: %s", exc)
         raise HTTPException(status_code=503, detail="Database unavailable, please try again later.")
 
 
-def confirm_delete(session_id: str) -> dict:
-    logger.info("confirm_delete called session_id=%s", session_id)
+def confirm_delete(session_id: str, deleted_count: int, storage_freed_bytes: int) -> dict:
+    logger.info("confirm_delete called session_id=%s deleted_count=%d storage_freed_bytes=%d", session_id, deleted_count, storage_freed_bytes)
     try:
         supabase = get_supabase()
+        session = _get_session(supabase, session_id)
+        user_id = session["user_id"]
 
-        items_result = (
-            supabase.table("delete_queue")
-            .select("id, file_size_bytes")
-            .eq("session_id", session_id)
-            .eq("confirmed", False)
+        supabase.table("sessions").update({
+            "total_deleted": session["total_deleted"] + deleted_count,
+            "storage_saved_bytes": session["storage_saved_bytes"] + storage_freed_bytes,
+        }).eq("id", session_id).execute()
+
+        today = date_type.today().isoformat()
+        existing = (
+            supabase.table("daily_stats")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("date", today)
             .execute()
         )
-        if not items_result.data:
-            logger.warning("confirm_delete rejected: empty queue session_id=%s", session_id)
-            raise ValueError("No items in delete queue to confirm")
+        if existing.data:
+            row = existing.data[0]
+            supabase.table("daily_stats").update({
+                "reviewed": row["reviewed"] + deleted_count,
+                "deleted": row["deleted"] + deleted_count,
+                "storage_saved_bytes": row["storage_saved_bytes"] + storage_freed_bytes,
+            }).eq("user_id", user_id).eq("date", today).execute()
+        else:
+            supabase.table("daily_stats").insert({
+                "user_id": user_id,
+                "date": today,
+                "reviewed": deleted_count,
+                "kept": 0,
+                "deleted": deleted_count,
+                "storage_saved_bytes": storage_freed_bytes,
+            }).execute()
 
-        session = _get_session(supabase, session_id)
-
-        supabase.table("delete_queue").update({"confirmed": True}).eq("session_id", session_id).eq("confirmed", False).execute()
-
-        count = len(items_result.data)
-        freed = sum(i["file_size_bytes"] for i in items_result.data)
-        _invalidate_summary_cache(session["user_id"])
-        logger.info("confirm_delete completed session_id=%s count=%d freed_bytes=%d", session_id, count, freed)
-        return {"deleted_count": count, "storage_freed_bytes": freed}
-    except (ValueError, LookupError, HTTPException):
+        _invalidate_summary_cache(user_id)
+        logger.info("confirm_delete completed session_id=%s count=%d freed_bytes=%d", session_id, deleted_count, storage_freed_bytes)
+        return {"deleted_count": deleted_count, "storage_freed_bytes": storage_freed_bytes}
+    except (LookupError, HTTPException):
         raise
     except Exception as exc:
         logger.error("Database error in confirm_delete: %s", exc)

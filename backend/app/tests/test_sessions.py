@@ -18,6 +18,15 @@ COMPLETED_SESSION = {
     "storage_saved_bytes": 2_000_000,
     "ended_at": "2026-01-02T00:00:00+00:00",
 }
+CANCELLED_SESSION = {
+    **SESSION,
+    "status": "cancelled",
+    "total_reviewed": 0,
+    "total_kept": 0,
+    "total_deleted": 0,
+    "storage_saved_bytes": 0,
+    "ended_at": "2026-01-02T00:00:00+00:00",
+}
 
 
 def test_create_session(client, mock_sb):
@@ -92,6 +101,20 @@ def test_update_session_completed(client, mock_sb):
     assert body["data"]["total_kept"] == 1
     assert body["data"]["total_deleted"] == 1
     assert body["data"]["storage_saved_bytes"] == 2_000_000
+    assert body["data"]["ended_at"] is not None
+
+
+def test_update_session_cancelled(client, mock_sb):
+    mock_sb.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [{"id": "sess-1"}]
+    mock_sb.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
+    mock_sb.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [CANCELLED_SESSION]
+
+    resp = client.patch("/api/v1/sessions/sess-1", json={"status": "cancelled"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["data"]["status"] == "cancelled"
     assert body["data"]["ended_at"] is not None
 
 

@@ -25,10 +25,16 @@ function generateDeviceId(): string {
 
 class SessionService {
   private currentSession: SessionState | null = null;
+  private cachedUserId: string | null = null;
 
   private async registerOrGetUser(): Promise<string> {
-    const cachedUserId = await AsyncStorage.getItem(USER_ID_STORAGE_KEY);
-    if (cachedUserId) return cachedUserId;
+    if (this.cachedUserId !== null) return this.cachedUserId;
+
+    const storedUserId = await AsyncStorage.getItem(USER_ID_STORAGE_KEY);
+    if (storedUserId) {
+      this.cachedUserId = storedUserId;
+      return storedUserId;
+    }
 
     let deviceId = await AsyncStorage.getItem(DEVICE_ID_STORAGE_KEY);
     if (!deviceId) {
@@ -41,6 +47,7 @@ class SessionService {
       throw new Error('Failed to register user');
     }
 
+    this.cachedUserId = response.data.id;
     await AsyncStorage.setItem(USER_ID_STORAGE_KEY, response.data.id);
     return response.data.id;
   }
@@ -177,7 +184,10 @@ class SessionService {
   }
 
   async getUserId(): Promise<string | null> {
-    return AsyncStorage.getItem(USER_ID_STORAGE_KEY);
+    if (this.cachedUserId !== null) return this.cachedUserId;
+    const id = await AsyncStorage.getItem(USER_ID_STORAGE_KEY);
+    if (id !== null) this.cachedUserId = id;
+    return id;
   }
 
   getActions(): SwipeAction[] {

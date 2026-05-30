@@ -1,132 +1,171 @@
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
   FlatList,
   Image,
   ListRenderItemInfo,
-  SafeAreaView,
+  Modal,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ActionSheet, Toast, useToast } from '../../components';
+import * as FileSystem from 'expo-file-system/legacy';
 import { deleteService, DeleteProgress } from '../../services/deleteService';
 import { useSwipeStore } from '../../store/swipeStore';
 import { DeleteQueueItem } from '../../types/index';
 import { formatFileSize } from '../../utils/fileSize';
+import { useTheme } from '../../theme/ThemeContext';
+import { typography } from '../../theme/typography';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const NUM_COLUMNS = 3;
 const ITEM_MARGIN = 2;
 const ITEM_SIZE = (SCREEN_WIDTH - ITEM_MARGIN * (NUM_COLUMNS + 1) * 2) / NUM_COLUMNS;
 
-interface GridItem extends DeleteQueueItem {
-  filename: string;
-}
-
 interface DeleteReviewScreenProps {
   onDismiss?: () => void;
 }
 
 export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProps) {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const deleteQueue = useSwipeStore((state) => state.deleteQueue);
-  const photos = useSwipeStore((state) => state.photos);
   const removeFromDeleteQueue = useSwipeStore((state) => state.removeFromDeleteQueue);
   const clearDeleteQueue = useSwipeStore((state) => state.clearDeleteQueue);
 
+  const { showToast, toastProps } = useToast();
+
   const [isDeleting, setIsDeleting] = useState(false);
   const [progress, setProgress] = useState<DeleteProgress | null>(null);
-
-  const filenameMap = useMemo(
-    () => new Map(photos.map((p) => [p.id, p.filename])),
-    [photos],
-  );
-
-  const gridItems: GridItem[] = useMemo(
-    () =>
-      deleteQueue.map((item) => ({
-        ...item,
-        filename:
-          filenameMap.get(item.photoId) ?? item.uri.split('/').pop() ?? 'photo',
-      })),
-    [deleteQueue, filenameMap],
-  );
+  const [confirmSheetVisible, setConfirmSheetVisible] = useState(false);
+  const [viewerUri, setViewerUri] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const totalSize = useMemo(
-    () => gridItems.reduce((sum, item) => sum + item.size, 0),
-    [gridItems],
+    () => deleteQueue.reduce((sum, item) => sum + item.size, 0),
+    [deleteQueue],
   );
 
-  const handleTapItem = (item: GridItem) => {
-    Alert.alert(
-      'Remove from Queue',
-      `Remove "${item.filename}" from the delete list?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeFromDeleteQueue(item.photoId),
-        },
-      ],
-    );
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
   };
 
-  const handleConfirmDelete = () => {
-    if (gridItems.length === 0) return;
-    Alert.alert(
-      'Delete Photos',
-      `Permanently delete ${gridItems.length} photo${gridItems.length === 1 ? '' : 's'} and free ${formatFileSize(totalSize)}? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Delete', style: 'destructive', onPress: performDelete },
-      ],
-    );
+  const handlePress = (item: DeleteQueueItem) => {
+    if (selectMode) {
+      const next = new Set(selectedIds);
+      if (next.has(item.photoId)) {
+        next.delete(item.photoId);
+      } else {
+        next.add(item.photoId);
+      }
+      setSelectedIds(next);
+      if (next.size === 0) {
+        setSelectMode(false);
+      }
+    } else {
+      setViewerUri(item.uri);
+    }
+  };
+
+  const handleLongPress = (item: DeleteQueueItem) => {
+    if (!selectMode) {
+      setSelectMode(true);
+      setSelectedIds(new Set([item.photoId]));
+    }
+  };
+
+  const isAllSelected = deleteQueue.length > 0 && selectedIds.size === deleteQueue.length;
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      exitSelectMode();
+    } else {
+      setSelectedIds(new Set(deleteQueue.map((item) => item.photoId)));
+    }
+  };
+
+  const handleRemoveSelected = () => {
+    selectedIds.forEach((id) => removeFromDeleteQueue(id));
+    exitSelectMode();
+  };
+
+  const LOW_STORAGE_BYTES = 50 * 1024 * 1024;
+
+  const handleConfirmDelete = async () => {
+    if (deleteQueue.length === 0) return;
+    try {
+      const free = await FileSystem.getFreeDiskStorageAsync();
+      if (free < LOW_STORAGE_BYTES) {
+        showToast(
+          'warning',
+          'Low Storage',
+          'Your device is running low on storage. Deletion may still proceed.',
+        );
+      }
+    } catch {
+      // silently ignore
+    }
+    setConfirmSheetVisible(true);
   };
 
   const performDelete = async () => {
     setIsDeleting(true);
-    setProgress({ completed: 0, total: gridItems.length });
+    setProgress({ completed: 0, total: deleteQueue.length });
 
     try {
-      const photoIds = gridItems.map((item) => item.photoId);
+      const photoIds = deleteQueue.map((item) => item.photoId);
       const result = await deleteService.deletePhotos(photoIds, deleteQueue, (p) => {
         setProgress(p);
       });
 
+      if (result.errorType === 'PERMISSION_DENIED') {
+        showToast('error', 'Permission Denied', 'Please allow PhotoSwipe to delete photos in your device settings.');
+        return;
+      }
+
       clearDeleteQueue();
 
-      const failNote =
-        result.failedCount > 0 ? ` ${result.failedCount} could not be deleted.` : '';
-      Alert.alert(
-        'Done',
-        `Deleted ${result.deletedCount} photo${result.deletedCount === 1 ? '' : 's'} and freed ${formatFileSize(totalSize)}.${failNote}`,
+      showToast(
+        'success',
+        'Photos Deleted',
+        `${result.deletedCount} photo${result.deletedCount === 1 ? '' : 's'} removed, ${formatFileSize(totalSize)} freed`,
       );
     } catch {
-      Alert.alert('Error', 'Failed to delete photos. Please try again.');
+      showToast('error', 'Deletion Failed', 'Some photos could not be deleted. Please try again.');
     } finally {
       setIsDeleting(false);
       setProgress(null);
     }
   };
 
-  const renderItem = ({ item }: ListRenderItemInfo<GridItem>) => (
-    <TouchableOpacity
-      style={styles.gridItem}
-      onPress={() => handleTapItem(item)}
-      activeOpacity={0.75}
-    >
-      <Image source={{ uri: item.uri }} style={styles.thumbnail} resizeMode="cover" />
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemFilename} numberOfLines={1} ellipsizeMode="tail">
-          {item.filename}
-        </Text>
-        <Text style={styles.itemSize}>{formatFileSize(item.size)}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }: ListRenderItemInfo<DeleteQueueItem>) => {
+    const isSelected = selectedIds.has(item.photoId);
+    return (
+      <TouchableOpacity
+        style={styles.gridItem}
+        onPress={() => handlePress(item)}
+        onLongPress={() => handleLongPress(item)}
+        activeOpacity={0.8}
+        delayLongPress={350}
+      >
+        <Image source={{ uri: item.uri }} style={styles.thumbnail} resizeMode="cover" />
+        {isSelected && (
+          <View style={styles.checkmarkOverlay}>
+            <Ionicons name="checkmark-circle" size={22} color="#007AFF" />
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   if (isDeleting) {
     const pct =
@@ -134,12 +173,14 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
         ? Math.round((progress.completed / progress.total) * 100)
         : 0;
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#ff3b30" />
-          <Text style={styles.deletingText}>Deleting photos...</Text>
+          <ActivityIndicator size="large" color={colors.danger} />
+          <Text style={[typography.headline, styles.deletingText, { color: colors.text }]}>
+            Deleting photos...
+          </Text>
           {progress && (
-            <Text style={styles.progressText}>
+            <Text style={[typography.subheadline, { color: colors.textSecondary }]}>
               {progress.completed} / {progress.total} ({pct}%)
             </Text>
           )}
@@ -148,72 +189,114 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
     );
   }
 
-  if (gridItems.length === 0) {
+  if (deleteQueue.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Delete Queue</Text>
+            <Text style={[typography.title2, { color: colors.text }]}>Delete Queue</Text>
             {onDismiss && (
               <TouchableOpacity onPress={onDismiss}>
-                <Text style={styles.dismissText}>Back</Text>
+                <Text style={[typography.body, { color: colors.primary }]}>Back</Text>
               </TouchableOpacity>
             )}
           </View>
         </View>
         <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>Queue is empty</Text>
-          <Text style={styles.emptySubtitle}>
+          <Text style={[typography.headline, { color: colors.text, marginBottom: 8 }]}>
+            Queue is empty
+          </Text>
+          <Text style={[typography.subheadline, { color: colors.textSecondary, textAlign: 'center' }]}>
             Swipe left on photos to add them here.
           </Text>
         </View>
+        <Toast {...toastProps} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Delete Queue</Text>
-          {onDismiss && (
-            <TouchableOpacity onPress={onDismiss}>
-              <Text style={styles.dismissText}>Back</Text>
+        {selectMode ? (
+          <View style={styles.headerRow}>
+            <TouchableOpacity style={styles.selectPill} onPress={exitSelectMode}>
+              <Ionicons name="close" size={14} color="#FFFFFF" />
+              <Text style={styles.selectPillText}>{selectedIds.size}</Text>
             </TouchableOpacity>
-          )}
-        </View>
-        <Text style={styles.headerSubtitle}>Tap a photo to remove it from the list</Text>
-      </View>
-
-      <View style={styles.summary}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{gridItems.length}</Text>
-          <Text style={styles.summaryLabel}>photos selected</Text>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={[styles.summaryValue, styles.summaryValueRed]}>
-            {formatFileSize(totalSize)}
-          </Text>
-          <Text style={styles.summaryLabel}>storage to free</Text>
-        </View>
+            <TouchableOpacity
+              style={[styles.selectAllCircle, isAllSelected && styles.selectAllCircleFilled]}
+              onPress={handleToggleSelectAll}
+            >
+              {isAllSelected && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <View style={styles.headerRow}>
+              <Text style={[typography.title2, { color: colors.text }]}>Delete Queue</Text>
+              {onDismiss && (
+                <TouchableOpacity onPress={onDismiss}>
+                  <Text style={[typography.body, { color: colors.primary }]}>Back</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={styles.headerSubtitle}>{deleteQueue.length} photos selected</Text>
+          </>
+        )}
       </View>
 
       <FlatList
-        data={gridItems}
+        data={deleteQueue}
         keyExtractor={(item) => item.photoId}
         renderItem={renderItem}
         numColumns={NUM_COLUMNS}
-        contentContainerStyle={styles.grid}
+        contentContainerStyle={[styles.grid, { paddingBottom: 16 }]}
       />
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.deleteButton} onPress={handleConfirmDelete}>
-          <Text style={styles.deleteButtonText}>
-            Delete {gridItems.length} Photo{gridItems.length === 1 ? '' : 's'}
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+        {selectedIds.size > 0 ? (
+          <TouchableOpacity onPress={handleRemoveSelected} style={styles.keepSelectedBtn}>
+            <Text style={styles.keepSelectedText}>Keep Selected</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.deleteButton} onPress={handleConfirmDelete}>
+            <Text style={styles.deleteButtonText}>
+              {totalSize > 0 ? `Delete All · ${formatFileSize(totalSize)}` : 'Delete All'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
+
+      <Modal
+        visible={viewerUri !== null}
+        transparent={false}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setViewerUri(null)}
+      >
+        <Pressable style={styles.viewer} onPress={() => setViewerUri(null)}>
+          <Image
+            source={{ uri: viewerUri ?? '' }}
+            style={styles.viewerImage}
+            resizeMode="contain"
+          />
+        </Pressable>
+      </Modal>
+
+      <ActionSheet
+        visible={confirmSheetVisible}
+        title={`Delete ${deleteQueue.length} photo${deleteQueue.length === 1 ? '' : 's'} and free ${formatFileSize(totalSize)}? This cannot be undone.`}
+        actions={[
+          {
+            label: `Delete ${deleteQueue.length} Photo${deleteQueue.length === 1 ? '' : 's'}`,
+            destructive: true,
+            onPress: performDelete,
+          },
+        ]}
+        onDismiss={() => setConfirmSheetVisible(false)}
+      />
+      <Toast {...toastProps} />
     </SafeAreaView>
   );
 }
@@ -221,7 +304,6 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
   },
   centered: {
     flex: 1,
@@ -230,129 +312,108 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#888888',
-    marginTop: 2,
-  },
-  summary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    marginVertical: 12,
-    paddingVertical: 14,
     paddingHorizontal: 16,
-    backgroundColor: '#f7f7f7',
-    borderRadius: 12,
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  summaryValueRed: {
-    color: '#ff3b30',
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#888888',
-    marginTop: 2,
-  },
-  summaryDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: 36,
-    backgroundColor: '#d0d0d0',
-    marginHorizontal: 16,
-  },
-  grid: {
-    padding: ITEM_MARGIN,
-  },
-  gridItem: {
-    width: ITEM_SIZE,
-    margin: ITEM_MARGIN,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#f0f0f0',
-  },
-  thumbnail: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  itemInfo: {
-    paddingHorizontal: 5,
-    paddingVertical: 4,
-    backgroundColor: '#ffffff',
-  },
-  itemFilename: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#333333',
-  },
-  itemSize: {
-    fontSize: 9,
-    color: '#888888',
-    marginTop: 1,
-  },
-  footer: {
-    padding: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e0e0e0',
-  },
-  deleteButton: {
-    backgroundColor: '#ff3b30',
     paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  deleteButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  deletingText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginTop: 16,
-  },
-  progressText: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 8,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#888888',
-    textAlign: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  dismissText: {
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  headerTitleGroup: {
+    alignItems: 'center',
+  },
+  grid: {
+    padding: ITEM_MARGIN,
+  },
+  gridItem: {
+    width: ITEM_SIZE,
+    height: ITEM_SIZE,
+    margin: ITEM_MARGIN,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  thumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  checkmarkOverlay: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+  },
+  selectPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 99,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  selectPillText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  selectAllCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#8E8E93',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectAllCircleFilled: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  footer: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  keepSelectedBtn: {
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  keepSelectedText: {
     fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  deleteButton: {
+    borderRadius: 9999,
+    height: 50,
+    backgroundColor: '#1C1C1E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  deletingText: {
+    marginTop: 16,
+  },
+  viewer: {
+    flex: 1,
+    backgroundColor: '#000000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  viewerImage: {
+    width: '100%',
+    height: '100%',
   },
 });

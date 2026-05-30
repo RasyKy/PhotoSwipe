@@ -24,12 +24,26 @@ class SwipeRequest(BaseModel):
     action: Literal["keep", "delete"]
 
 
+class SwipeBatchItem(BaseModel):
+    photo_uri: str
+    photo_name: str
+    file_size_bytes: int
+    action: Literal["keep", "delete"]
+
+
+class SwipeBatchRequest(BaseModel):
+    session_id: str
+    swipes: list[SwipeBatchItem]
+
+
 class UndoSwipeRequest(BaseModel):
     session_id: str
 
 
 class ConfirmDeleteRequest(BaseModel):
     session_id: str
+    deleted_count: int
+    storage_freed_bytes: int
 
 
 # --- Responses ---
@@ -58,18 +72,15 @@ class SwipeActionResponse(BaseModel):
     swiped_at: str
 
 
+class SwipeBatchResponse(BaseModel):
+    processed: int
+
+
 class UndoResponse(BaseModel):
     undone_swipe_id: str
     photo_uri: str
     action: str
 
-
-class DeleteQueueItemResponse(BaseModel):
-    id: str
-    photo_uri: str
-    photo_name: str
-    file_size_bytes: int
-    added_at: str
 
 
 class ConfirmDeleteResponse(BaseModel):
