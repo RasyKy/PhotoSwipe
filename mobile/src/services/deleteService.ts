@@ -1,7 +1,6 @@
 import * as MediaLibrary from 'expo-media-library';
 import api from './api';
 import { sessionService } from './sessionService';
-import { useSettingsStore } from '../stores/settingsStore';
 import { DeleteQueueItem } from '../types/index';
 
 export interface DeleteProgress {
@@ -45,21 +44,6 @@ class DeleteService {
     try {
       if (onProgress) {
         onProgress({ completed: 0, total: photoIds.length });
-      }
-
-      const { backupEnabled } = useSettingsStore.getState();
-      if (backupEnabled) {
-        const userId = (await sessionService.getUserId()) ?? '';
-        await Promise.all(
-          deleteQueueItems.map(async (item) => {
-            try {
-              const photoName = item.uri.split('/').pop() ?? 'photo.jpg';
-              await api.backupUpload(userId, item.uri, photoName);
-            } catch (err) {
-              console.error(`Backup failed for ${item.photoId}, continuing:`, err);
-            }
-          }),
-        );
       }
 
       const sessionId = sessionService.getSessionId() ?? '';

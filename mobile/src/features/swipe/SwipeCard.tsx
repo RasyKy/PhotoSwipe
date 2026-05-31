@@ -12,6 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Photo } from '../../types/index';
+import { useTheme } from '../../theme/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 32;
@@ -27,6 +28,7 @@ interface SwipeCardProps {
 }
 
 const SwipeCard: React.FC<SwipeCardProps> = ({ photo, nextPhoto, onSwipeLeft, onSwipeRight }) => {
+  const { colors } = useTheme();
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const [imageError, setImageError] = useState(false);
@@ -121,8 +123,8 @@ const SwipeCard: React.FC<SwipeCardProps> = ({ photo, nextPhoto, onSwipeLeft, on
       <GestureDetector gesture={pan}>
         <Animated.View style={[styles.card, styles.frontCard, frontCardStyle]}>
           {imageError ? (
-            <View style={styles.imagePlaceholder}>
-              <Ionicons name="image-outline" size={48} color="#C7C7CC" />
+            <View style={[styles.imagePlaceholder, { backgroundColor: colors.surface }]}>
+              <Ionicons name="image-outline" size={48} color={colors.textTertiary} />
             </View>
           ) : (
             <Image
@@ -186,7 +188,6 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#F2F2F7',
     alignItems: 'center',
     justifyContent: 'center',
   },

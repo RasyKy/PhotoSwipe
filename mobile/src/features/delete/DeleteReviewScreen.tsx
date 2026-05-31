@@ -13,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ActionSheet, Toast, useToast } from '../../components';
 import * as FileSystem from 'expo-file-system/legacy';
 import { deleteService, DeleteProgress } from '../../services/deleteService';
@@ -34,7 +34,6 @@ interface DeleteReviewScreenProps {
 
 export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProps) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const deleteQueue = useSwipeStore((state) => state.deleteQueue);
   const removeFromDeleteQueue = useSwipeStore((state) => state.removeFromDeleteQueue);
   const clearDeleteQueue = useSwipeStore((state) => state.clearDeleteQueue);
@@ -151,7 +150,7 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
     const isSelected = selectedIds.has(item.photoId);
     return (
       <TouchableOpacity
-        style={styles.gridItem}
+        style={[styles.gridItem, { backgroundColor: colors.surface }]}
         onPress={() => handlePress(item)}
         onLongPress={() => handleLongPress(item)}
         activeOpacity={0.8}
@@ -220,12 +219,12 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
       <View style={styles.header}>
         {selectMode ? (
           <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.selectPill} onPress={exitSelectMode}>
-              <Ionicons name="close" size={14} color="#FFFFFF" />
-              <Text style={styles.selectPillText}>{selectedIds.size}</Text>
+            <TouchableOpacity style={[styles.selectPill, { backgroundColor: colors.text }]} onPress={exitSelectMode}>
+              <Ionicons name="close" size={14} color={colors.background} />
+              <Text style={[styles.selectPillText, { color: colors.background }]}>{selectedIds.size}</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.selectAllCircle, isAllSelected && styles.selectAllCircleFilled]}
+              style={[styles.selectAllCircle, { borderColor: colors.textSecondary }, isAllSelected && styles.selectAllCircleFilled]}
               onPress={handleToggleSelectAll}
             >
               {isAllSelected && <Ionicons name="checkmark" size={16} color="#FFFFFF" />}
@@ -241,7 +240,7 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.headerSubtitle}>{deleteQueue.length} photos selected</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>{deleteQueue.length} photos selected</Text>
           </>
         )}
       </View>
@@ -254,14 +253,18 @@ export default function DeleteReviewScreen({ onDismiss }: DeleteReviewScreenProp
         contentContainerStyle={[styles.grid, { paddingBottom: 16 }]}
       />
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+      <View style={[styles.footer, {
+        backgroundColor: colors.background,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: colors.separator,
+      }]}>
         {selectedIds.size > 0 ? (
-          <TouchableOpacity onPress={handleRemoveSelected} style={styles.keepSelectedBtn}>
-            <Text style={styles.keepSelectedText}>Keep Selected</Text>
+          <TouchableOpacity onPress={handleRemoveSelected} style={[styles.keepSelectedBtn, { backgroundColor: colors.text }]}>
+            <Text style={[styles.keepSelectedText, { color: colors.background }]}>Keep Selected</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.deleteButton} onPress={handleConfirmDelete}>
-            <Text style={styles.deleteButtonText}>
+          <TouchableOpacity style={[styles.deleteButton, { backgroundColor: colors.text }]} onPress={handleConfirmDelete}>
+            <Text style={[styles.deleteButtonText, { color: colors.background }]}>
               {totalSize > 0 ? `Delete All · ${formatFileSize(totalSize)}` : 'Delete All'}
             </Text>
           </TouchableOpacity>
@@ -322,7 +325,6 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 13,
-    color: '#8E8E93',
     marginTop: 2,
   },
   headerTitleGroup: {
@@ -351,13 +353,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#1C1C1E',
     borderRadius: 99,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   selectPillText: {
-    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -366,7 +366,6 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#8E8E93',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -375,12 +374,11 @@ const styles = StyleSheet.create({
     borderColor: '#007AFF',
   },
   footer: {
-    backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   keepSelectedBtn: {
-    backgroundColor: '#F2F2F7',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
@@ -389,19 +387,16 @@ const styles = StyleSheet.create({
   keepSelectedText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1C1C1E',
   },
   deleteButton: {
-    borderRadius: 9999,
+    borderRadius: 12,
     height: 50,
-    backgroundColor: '#1C1C1E',
     alignItems: 'center',
     justifyContent: 'center',
   },
   deleteButtonText: {
     fontSize: 17,
     fontWeight: '600',
-    color: '#FFFFFF',
   },
   deletingText: {
     marginTop: 16,

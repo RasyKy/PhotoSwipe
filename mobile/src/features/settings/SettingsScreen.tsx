@@ -2,15 +2,12 @@ import React from 'react';
 import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
-import { useSettingsStore } from '../../stores/settingsStore';
 import { sharedStyles } from '../../theme/styles';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
 export default function SettingsScreen() {
   const { colors, isDarkMode, hapticEnabled, toggleDarkMode, toggleHapticEnabled } = useTheme();
-  const backupEnabled = useSettingsStore((state) => state.backupEnabled);
-  const toggleBackupEnabled = useSettingsStore((state) => state.toggleBackupEnabled);
 
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: colors.background }]} edges={['top']}>
@@ -21,10 +18,6 @@ export default function SettingsScreen() {
       >
         <Text style={[typography.title2, styles.pageTitle, { color: colors.text }]}>
           Settings
-        </Text>
-
-        <Text style={[sharedStyles.sectionHeader, { color: colors.textSecondary }]}>
-          Preferences
         </Text>
 
         <View style={[sharedStyles.card, { backgroundColor: colors.surface }]}>
@@ -50,17 +43,6 @@ export default function SettingsScreen() {
             />
           </View>
 
-          <View style={[styles.separator, { backgroundColor: colors.separator }]} />
-
-          <View style={styles.row}>
-            <Text style={[typography.body, { color: colors.text }]}>Backup Before Deletion</Text>
-            <Switch
-              value={backupEnabled}
-              onValueChange={toggleBackupEnabled}
-              trackColor={{ false: colors.separator, true: '#34C75940' }}
-              thumbColor={backupEnabled ? colors.success : colors.surface}
-            />
-          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

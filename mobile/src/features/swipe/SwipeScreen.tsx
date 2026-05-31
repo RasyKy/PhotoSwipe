@@ -62,8 +62,27 @@ export default function SwipeScreen() {
   const updatePhotoSizes = useSwipeStore((state) => state.updatePhotoSizes);
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const backgroundTimeRef = useRef<number | null>(null);
   const pendingSwipesRef = useRef<PendingSwipeItem[]>([]);
   const isFlushingRef = useRef(false);
+
+  const flushPendingSwipes = useCallback(async () => {
+    if (pendingSwipesRef.current.length === 0 || isFlushingRef.current) return;
+    isFlushingRef.current = true;
+    const batch = pendingSwipesRef.current.splice(0);
+    const sessionId = sessionService.getSessionId() ?? '';
+    if (!sessionId) {
+      isFlushingRef.current = false;
+      return;
+    }
+    try {
+      await api.recordSwipeBatch(sessionId, batch);
+    } catch (err) {
+      console.error('Batch swipe sync failed:', err);
+    } finally {
+      isFlushingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     const run = () => initGallery();
@@ -81,7 +100,33 @@ export default function SwipeScreen() {
       const prev = appStateRef.current;
       appStateRef.current = nextAppState;
 
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        if (backgroundTimeRef.current === null) {
+          backgroundTimeRef.current = Date.now();
+        }
+        return;
+      }
+
       if (nextAppState === 'active' && (prev === 'background' || prev === 'inactive')) {
+        const bgStart = backgroundTimeRef.current;
+        backgroundTimeRef.current = null;
+        const awayMs = bgStart !== null ? Date.now() - bgStart : 0;
+
+        if (awayMs >= 5 * 60 * 1000) {
+          void (async () => {
+            await flushPendingSwipes();
+            await sessionService.endSession();
+            useSwipeStore.getState().reset();
+            setIsLoading(true);
+            setError(null);
+            setNextCursor(undefined);
+            setIsLoadingMore(false);
+            setShowReview(false);
+            await initGallery();
+          })();
+          return;
+        }
+
         if (permissionCanRetry !== null) {
           void (async () => {
             const result = await requestPermission();
@@ -97,7 +142,7 @@ export default function SwipeScreen() {
     });
 
     return () => subscription.remove();
-  }, [permissionCanRetry]);
+  }, [permissionCanRetry, flushPendingSwipes]);
 
   const initGallery = async () => {
     const result = await requestPermission();
@@ -151,6 +196,13 @@ export default function SwipeScreen() {
     }
   };
 
+  const isDone = !isLoading && !isLoadingMore && photos.length > 0 && currentIndex >= photos.length && nextCursor === undefined;
+
+  useEffect(() => {
+    if (!isDone) return;
+    void flushPendingSwipes().then(() => { void sessionService.endSession(); });
+  }, [isDone, flushPendingSwipes]);
+
   useEffect(() => {
     if (!nextCursor || isLoadingMore || currentIndex < photos.length - 20) return;
 
@@ -169,24 +221,6 @@ export default function SwipeScreen() {
       .slice(currentIndex + 1, currentIndex + 4)
       .forEach((p) => Image.prefetch(p.uri).catch(() => {}));
   }, [currentIndex, photos]);
-
-  const flushPendingSwipes = useCallback(async () => {
-    if (pendingSwipesRef.current.length === 0 || isFlushingRef.current) return;
-    isFlushingRef.current = true;
-    const batch = pendingSwipesRef.current.splice(0);
-    const sessionId = sessionService.getSessionId() ?? '';
-    if (!sessionId) {
-      isFlushingRef.current = false;
-      return;
-    }
-    try {
-      await api.recordSwipeBatch(sessionId, batch);
-    } catch (err) {
-      console.error('Batch swipe sync failed:', err);
-    } finally {
-      isFlushingRef.current = false;
-    }
-  }, []);
 
   useEffect(() => {
     const id = setInterval(() => { void flushPendingSwipes(); }, 2000);
@@ -249,6 +283,7 @@ export default function SwipeScreen() {
 
   const handleStartNewSession = async () => {
     await flushPendingSwipes();
+    await sessionService.endSession();
     useSwipeStore.getState().reset();
     setIsLoading(true);
     setError(null);
@@ -260,8 +295,6 @@ export default function SwipeScreen() {
 
   const currentPhoto = photos[currentIndex] ?? null;
   const nextPhoto = photos[currentIndex + 1] ?? undefined;
-  const hasMore = nextCursor !== undefined;
-  const isDone = !isLoading && !isLoadingMore && photos.length > 0 && currentIndex >= photos.length && !hasMore;
   const undoDisabled = currentIndex === 0;
   const total = totalPhotoCount > 0 ? totalPhotoCount : photos.length;
 
@@ -339,30 +372,30 @@ export default function SwipeScreen() {
         <SafeAreaView style={[styles.fill, styles.centered, { backgroundColor: colors.background }]}>
           <View style={styles.doneContent}>
             <Text style={[styles.doneTitle, { color: colors.text }]}>All done!</Text>
-            <Text style={styles.doneSubtitle}>
+            <Text style={[styles.doneSubtitle, { color: colors.textSecondary }]}>
               You reviewed all {total} photo{total === 1 ? '' : 's'}.
             </Text>
             {deleteQueue.length > 0 && (
-              <Text style={styles.queueNote}>
+              <Text style={[styles.queueNote, { color: colors.danger }]}>
                 {deleteQueue.length} photo{deleteQueue.length === 1 ? '' : 's'} queued for deletion
               </Text>
             )}
             {deleteQueue.length > 0 && (
               <TouchableOpacity
-                style={styles.reviewBtn}
+                style={[styles.reviewBtn, { backgroundColor: colors.surface }]}
                 onPress={async () => {
                   await flushPendingSwipes();
                   navigation.navigate('Delete');
                 }}
               >
-                <Text style={styles.reviewBtnText}>Review Delete Queue</Text>
+                <Text style={[styles.reviewBtnText, { color: colors.background }]}>Review Delete Queue</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              style={[styles.newSessionBtn, { marginTop: deleteQueue.length > 0 ? 12 : 24 }]}
+              style={[styles.newSessionBtn, { marginTop: deleteQueue.length > 0 ? 12 : 24, backgroundColor: colors.surfaceSecondary }]}
               onPress={handleStartNewSession}
             >
-              <Text style={styles.newSessionBtnText}>Start New Session</Text>
+              <Text style={[styles.newSessionBtnText, { color: colors.text }]}>Start New Session</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -400,8 +433,8 @@ export default function SwipeScreen() {
           </View>
         </View>
 
-        <View style={styles.progressTrack}>
-          <Animated.View style={[styles.progressFillBar, progressFillStyle]} />
+        <View style={[styles.progressTrack, { backgroundColor: colors.separator }]}>
+          <Animated.View style={[styles.progressFillBar, progressFillStyle, { backgroundColor: colors.primary }]} />
         </View>
 
         <View style={styles.cardArea}>
@@ -415,20 +448,20 @@ export default function SwipeScreen() {
         </View>
 
         <View style={styles.bottomControls}>
-          <TouchableOpacity style={styles.btnDelete} onPress={() => handleSwipe('delete')}>
-            <Ionicons name="close" size={28} color="#FF3B30" />
+          <TouchableOpacity style={[styles.btnDelete, { backgroundColor: colors.surface }]} onPress={() => handleSwipe('delete')}>
+            <Ionicons name="close" size={28} color={colors.danger} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.btnUndo, undoDisabled && styles.btnDisabled]}
+            style={[styles.btnUndo, { backgroundColor: colors.surface }, undoDisabled && styles.btnDisabled]}
             onPress={handleUndo}
             disabled={undoDisabled}
           >
-            <Ionicons name="arrow-undo" size={22} color="#8E8E93" />
+            <Ionicons name="arrow-undo" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.btnKeep} onPress={() => handleSwipe('keep')}>
-            <Ionicons name="checkmark" size={28} color="#34C759" />
+          <TouchableOpacity style={[styles.btnKeep, { backgroundColor: colors.surface }]} onPress={() => handleSwipe('keep')}>
+            <Ionicons name="checkmark" size={28} color={colors.success} />
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -471,13 +504,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     height: 3,
     borderRadius: 2,
-    backgroundColor: '#E5E5EA',
     marginBottom: 8,
   },
   progressFillBar: {
     height: 3,
     borderRadius: 2,
-    backgroundColor: '#007AFF',
   },
   cardArea: {
     flex: 1,
@@ -496,7 +527,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -509,7 +539,6 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -522,7 +551,6 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -571,18 +599,15 @@ const styles = StyleSheet.create({
   },
   doneSubtitle: {
     fontSize: 17,
-    color: '#8E8E93',
     textAlign: 'center',
     marginBottom: 20,
   },
   queueNote: {
     fontSize: 15,
-    color: '#FF3B30',
     textAlign: 'center',
     marginTop: 8,
   },
   reviewBtn: {
-    backgroundColor: '#1C1C1E',
     height: 52,
     borderRadius: 12,
     marginHorizontal: 16,
@@ -594,10 +619,8 @@ const styles = StyleSheet.create({
   reviewBtnText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FFFFFF',
   },
   newSessionBtn: {
-    backgroundColor: '#F2F2F7',
     height: 52,
     borderRadius: 12,
     marginHorizontal: 16,
@@ -608,6 +631,5 @@ const styles = StyleSheet.create({
   newSessionBtnText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1C1C1E',
   },
 });

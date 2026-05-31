@@ -35,9 +35,9 @@ export const lightColors: ThemeColors = {
 };
 
 export const darkColors: ThemeColors = {
-  background: '#1C1C1E',
-  surface: '#2C2C2E',
-  surfaceSecondary: '#3A3A3C',
+  background: '#000000',
+  surface: '#1C1C1E',
+  surfaceSecondary: '#2C2C2E',
   text: '#FFFFFF',
   textSecondary: '#8E8E93',
   textTertiary: '#636366',

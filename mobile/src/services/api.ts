@@ -1,5 +1,3 @@
-import * as FileSystem from 'expo-file-system/legacy';
-
 export const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://photoswipe.onrender.com/api/v1';
 export const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? '';
 const USE_MOCK = false;
@@ -153,29 +151,6 @@ const realApi = {
       return { success: false, data: null, error: 'Network error' };
     }
   },
-
-  backupUpload: async (userId: string, photoUri: string, photoName: string): Promise<ApiResponse<null>> => {
-    try {
-      let base64: string;
-      try {
-        base64 = await FileSystem.readAsStringAsync(photoUri, { encoding: 'base64' });
-      } catch {
-        return { success: false, data: null, error: 'Failed to read photo file' };
-      }
-      const formData = new FormData();
-      formData.append('user_id', userId);
-      formData.append('photo_name', photoName);
-      formData.append('file', base64);
-      const response = await fetch(`${BASE_URL}/backup/upload`, {
-        method: 'POST',
-        headers: { 'X-API-Key': API_KEY },
-        body: formData,
-      });
-      return handleResponse<null>(response);
-    } catch {
-      return { success: false, data: null, error: 'Network error' };
-    }
-  },
 };
 
 const mockApi: typeof realApi = {
@@ -188,7 +163,6 @@ const mockApi: typeof realApi = {
   getAnalyticsSummary: async (_userId) => ({ success: true, data: { total_reviewed: 0, total_kept: 0, total_deleted: 0, total_storage_saved_bytes: 0, total_sessions: 0 } }),
   getAnalyticsHistory: async (_userId, _period) => ({ success: true, data: [] }),
   recordSwipeBatch: async (_sessionId, swipes) => ({ success: true, data: { processed: swipes.length } }),
-  backupUpload: async (_userId, _photoUri, _photoName) => ({ success: true, data: null }),
 };
 
 const api = USE_MOCK ? mockApi : realApi;

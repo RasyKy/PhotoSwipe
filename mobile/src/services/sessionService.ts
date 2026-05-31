@@ -163,15 +163,15 @@ class SessionService {
   async endSession(): Promise<boolean> {
     if (!this.currentSession) return false;
 
-    try {
-      const response = await api.endSession(this.currentSession.sessionId);
+    const sessionId = this.currentSession.sessionId;
+    this.currentSession = null;
 
+    try {
+      await AsyncStorage.multiRemove([SESSION_STORAGE_KEY, SESSION_ACTIONS_KEY]);
+      const response = await api.endSession(sessionId);
       if (!response.success) {
         console.warn('API endSession failed');
       }
-
-      await AsyncStorage.multiRemove([SESSION_STORAGE_KEY, SESSION_ACTIONS_KEY]);
-      this.currentSession = null;
       return true;
     } catch (error) {
       console.error('Error ending session:', error);
